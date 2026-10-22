@@ -17,6 +17,7 @@ class FormatSpec:
     champions: bool = False
     blitz: bool = False
     national_dex: bool = False
+    badnboosted: bool = False
 
     @property
     def gen_string(self) -> str:
@@ -34,6 +35,18 @@ class FormatSpec:
         # the format name without the blitz suffix, e.g. for dataset/stats lookups
         if self.blitz:
             return self.full_name[: -len("blitz")]
+        return self.full_name
+
+    @property
+    def smogon_stats_format(self) -> str:
+        if self.badnboosted:
+            return "gen9ou"
+        return self.base_name
+
+    @property
+    def sets_format(self) -> str:
+        if self.badnboosted:
+            return "gen9ou"
         return self.full_name
 
     @classmethod
@@ -62,4 +75,5 @@ def _parse_format_string(format_string: str) -> FormatSpec:
         champions="champions" in format_string,
         blitz=format_string.endswith("blitz"),
         national_dex="nationaldex" in format_string,
+        badnboosted=format_string == "gen9badnboosted",
     )

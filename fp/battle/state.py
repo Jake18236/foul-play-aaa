@@ -11,9 +11,11 @@ from fp.battle.helpers import (
     get_pokemon_info_from_condition,
     possible_hidden_power_types,
     random_battles_evs,
+    modify_base_stats_for_format,
 )
 from fp.battle.helpers import normalize_name
 from fp.battle.helpers import calculate_stats
+from fp.config import FoulPlayConfig
 from fp.format_spec import FormatSpec
 from fp.generations import (
     GenerationMechanics,
@@ -113,7 +115,9 @@ class Battle:
         self.user.active = None
 
         for pkmn_string in opponent_pokemon:
-            pokemon = Pokemon.from_switch_string(pkmn_string)
+            pokemon = Pokemon.from_switch_string(
+                pkmn_string, format_spec=self.format_spec
+            )
 
             if pokemon.name in smart_team_preview.get(battle_type, {}):
                 new_pokemon_name = smart_team_preview[battle_type][pokemon.name]
@@ -122,7 +126,9 @@ class Battle:
                         pokemon.name, new_pokemon_name
                     )
                 )
-                pokemon = Pokemon(new_pokemon_name, pokemon.level)
+                pokemon = Pokemon(
+                    new_pokemon_name, pokemon.level, format_spec=self.format_spec
+                )
 
             elif pkmn_string.endswith("-*"):
                 pokemon.unknown_forme = True
@@ -134,10 +140,12 @@ class Battle:
     def during_team_preview(self): ...
 
     def start_non_team_preview_battle(self, user_json, opponent_switch_string):
-        self.user.initialize_first_turn_user_from_json(user_json)
+        self.user.initialize_first_turn_user_from_json(user_json, self.format_spec)
 
         pkmn_information = opponent_switch_string.split("|")[3]
-        pkmn = Pokemon.from_switch_string(pkmn_information)
+        pkmn = Pokemon.from_switch_string(
+            pkmn_information, format_spec=self.format_spec
+        )
         self.opponent.active = pkmn
 
         self.started = True
@@ -382,7 +390,7 @@ class Battler:
             except KeyError:
                 pass
 
-    def update_from_request_json(self, request_json):
+    def update_from_request_json(self, request_json, format_spec=None):
         """
         Updates the battler's information based on the request JSON
         This should be called with a cloned battle/battler so that the original is not modified
@@ -400,7 +408,8 @@ class Battler:
             request_json[constants.SIDE][constants.POKEMON]
         ):
             switch_string_pkmn = Pokemon.from_switch_string(
-                pkmn_dict[constants.DETAILS]
+                pkmn_dict[constants.DETAILS],
+                format_spec=format_spec or self.active.format_spec,
             )
             pkmn_name = switch_string_pkmn.name
             pkmn_level = switch_string_pkmn.level
@@ -472,7 +481,7 @@ class Battler:
             pkmn_info[constants.CONDITION]
         )
 
-    def initialize_first_turn_user_from_json(self, request_json):
+    def initialize_first_turn_user_from_json(self, request_json, format_spec=None):
         """
         Similar to `update_from_request_json`, but meant to be used on the first `request_json` that is seen
         This function differs in that it adds new pokemon to the Side rather than modifying existing ones
@@ -494,12 +503,18 @@ class Battler:
             nickname = pkmn_dict[constants.IDENT]
             pkmn_details = pkmn_dict[constants.DETAILS]
             pkmn_item = pkmn_dict[constants.ITEM] if pkmn_dict[constants.ITEM] else None
-            pkmn = Pokemon.from_switch_string(pkmn_details, nickname=nickname)
+            pkmn = Pokemon.from_switch_string(
+                pkmn_details, nickname=nickname, format_spec=format_spec
+            )
 
             # For some reason PS sends "zacian" during team preview
             # when you have a zacian with a rusted sword
             if pkmn.name.startswith("zacian") and pkmn_item == "rustedsword":
-                pkmn = Pokemon("zaciancrowned", pkmn.level)
+                pkmn = Pokemon(
+                    "zaciancrowned",
+                    pkmn.level,
+                    format_spec=format_spec or pkmn.format_spec,
+                )
                 pkmn.nickname = nickname
 
             pkmn.ability = pkmn_dict[
@@ -584,7 +599,9 @@ class Battler:
 
 
 class Pokemon:
-    def __init__(self, name: str, level: int, nature="serious", evs=None):
+    def __init__(
+        self, name: str, level: int, nature="serious", evs=None, format_spec=None
+    ):
         if evs is None:
             evs = random_battles_evs()
 
@@ -594,18 +611,21 @@ class Pokemon:
         self.index = None
         self.revealed = False
         self.level = level
+        self.format_spec = format_spec or FoulPlayConfig.format_spec
         self.nature = nature
         self.evs = evs
         self.speed_range = StatRange(min=0, max=float("inf"))
         self.hidden_power_possibilities = possible_hidden_power_types()
 
         try:
-            self.base_stats = pokedex[self.name][constants.BASESTATS]
+            base_stats = pokedex[self.name][constants.BASESTATS]
         except KeyError:
             logger.info("Could not pokedex entry for {}".format(self.name))
             self.name = [k for k in pokedex if self.name.startswith(k)][0]
             logger.info("Using {} instead".format(self.name))
-            self.base_stats = pokedex[self.name][constants.BASESTATS]
+            base_stats = pokedex[self.name][constants.BASESTATS]
+
+        self.base_stats = modify_base_stats_for_format(base_stats, self.format_spec)
 
         self.stats = calculate_stats(
             self.base_stats, self.level, nature=nature, evs=evs
@@ -690,7 +710,9 @@ class Pokemon:
     def forme_change(self, new_forme_switch_string):
         current_hp_percentage = self.hp / self.max_hp
 
-        new_pokemon = Pokemon.from_switch_string(new_forme_switch_string)
+        new_pokemon = Pokemon.from_switch_string(
+            new_forme_switch_string, format_spec=self.format_spec
+        )
         self.name = new_pokemon.name
         self.hp = int(current_hp_percentage * self.max_hp)
         self.base_stats = new_pokemon.base_stats
@@ -725,7 +747,7 @@ class Pokemon:
         return "".join(ps_string.split(":")[1:]).strip()
 
     @classmethod
-    def from_switch_string(cls, switch_string, nickname=None):
+    def from_switch_string(cls, switch_string, nickname=None, format_spec=None):
         if nickname is not None:
             nickname = cls.extract_nickname_from_pokemonshowdown_string(nickname)
 
@@ -735,7 +757,7 @@ class Pokemon:
             level = int(details[1].replace("L", "").strip())
         except (IndexError, ValueError):
             level = 100
-        pkmn = Pokemon(name, level)
+        pkmn = Pokemon(name, level, format_spec=format_spec)
         pkmn.nickname = nickname
         return pkmn
 

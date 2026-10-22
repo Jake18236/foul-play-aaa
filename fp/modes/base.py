@@ -199,7 +199,9 @@ def format_decision(battle, decision):
 async def async_pick_move(battle):
     battle_copy = deepcopy(battle)
     if not battle_copy.team_preview:
-        battle_copy.user.update_from_request_json(battle_copy.request_json)
+        battle_copy.user.update_from_request_json(
+            battle_copy.request_json, battle_copy.format_spec
+        )
 
     loop = asyncio.get_event_loop()
     with concurrent.futures.ThreadPoolExecutor() as pool:
@@ -264,7 +266,9 @@ async def get_first_request_json(
         if msg_split[1].strip() == "request" and msg_split[2].strip():
             user_json = json.loads(msg_split[2].strip("'"))
             battle.request_json = user_json
-            battle.user.initialize_first_turn_user_from_json(user_json)
+            battle.user.initialize_first_turn_user_from_json(
+                user_json, battle.format_spec
+            )
             battle.rqid = user_json[constants.RQID]
             return
 

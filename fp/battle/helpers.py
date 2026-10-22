@@ -1,6 +1,7 @@
 import math
 from fp import constants
 from fp.generations import StatCalculation, current_generation_mechanics
+from fp.format_spec import FormatSpec
 
 natures = {
     "lonely": {"plus": constants.ATTACK, "minus": constants.DEFENSE},
@@ -83,6 +84,16 @@ def normalize_name(name):
         .encode("ascii", "ignore")
         .decode("utf-8")
     )
+
+
+def modify_base_stats_for_format(base_stats, format_spec: FormatSpec):
+    modified_stats = base_stats.copy()
+    if format_spec.badnboosted:
+        modified_stats = {
+            stat: max(1, min(value * 2, 255)) if value <= 70 else value
+            for stat, value in modified_stats.items()
+        }
+    return modified_stats
 
 
 def update_stats_from_nature(stats, nature):

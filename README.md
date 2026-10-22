@@ -78,6 +78,20 @@ See [the engine docs](https://poke-engine.readthedocs.io/en/latest/) for more in
 
 The engine must be built from source if installing locally so you must have rust installed on your machine.
 
+### [Gen 9] Bad 'n Boosted
+
+Showdown's `gen9badnboosted` format is handled as a standard Gen 9 battle. Foul Play applies
+the format's species modification before calculating stats: every base stat at or below 70,
+including HP, is doubled and capped at 255. The resulting stats are passed to `poke-engine`,
+which uses them for damage calculations and MCTS simulation; no native engine changes are
+needed for this rule.
+
+There is no Bad 'n Boosted usage dataset, so opponent set inference uses Gen 9 OU priors.
+This affects sampled hidden teams, not the stat calculation, and can include sets banned by
+Bad 'n Boosted. Showdown still enforces its format bans and Sleep Moves Clause; Foul Play does
+not independently validate those restrictions, so this is not full format-specific opponent
+set modeling.
+
 ### Re-Installing the Engine
 
 It is common to want to re-install the engine for different generations of Pokémon.

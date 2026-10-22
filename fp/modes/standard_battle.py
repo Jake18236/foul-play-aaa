@@ -61,11 +61,15 @@ class StandardBattleMode(BattleMode):
             )
             self.smogon_sets.initialize(
                 FormatSpec.from_format_string(
-                    FoulPlayConfig.smogon_stats or pokemon_battle_type
+                    FoulPlayConfig.smogon_stats
+                    or battle.format_spec.smogon_stats_format
                 ),
                 unique_pkmn_names,
             )
-            self.team_datasets.initialize(battle.format_spec, unique_pkmn_names)
+            self.team_datasets.initialize(
+                FormatSpec.from_format_string(battle.format_spec.sets_format),
+                unique_pkmn_names,
+            )
 
             # apply the messages that were held onto
             process_battle_updates(battle)
@@ -112,14 +116,15 @@ class StandardBattleMode(BattleMode):
     def initialize_team_preview_datasets(
         self, pokemon_battle_type, unique_pkmn_names, msg
     ):
+        format_spec = FormatSpec.from_format_string(pokemon_battle_type)
         self.smogon_sets.initialize(
             FormatSpec.from_format_string(
-                FoulPlayConfig.smogon_stats or pokemon_battle_type
+                FoulPlayConfig.smogon_stats or format_spec.smogon_stats_format
             ),
             unique_pkmn_names,
         )
         self.team_datasets.initialize(
-            FormatSpec.from_format_string(pokemon_battle_type), unique_pkmn_names
+            FormatSpec.from_format_string(format_spec.sets_format), unique_pkmn_names
         )
 
     def add_revealed_pokemon(self, battle, pkmn):

@@ -48,6 +48,22 @@ class TestFormatSpecParsing:
         assert spec.national_dex
         assert BattleType.STANDARD_BATTLE == spec.battle_type
 
+    def test_badnboosted_uses_standard_battle_and_gen9_ou_priors(self):
+        spec = FormatSpec.from_format_string("gen9badnboosted")
+        assert 9 == spec.gen_number
+        assert "gen9" == spec.generation
+        assert BattleType.STANDARD_BATTLE == spec.battle_type
+        assert spec.badnboosted
+        assert "gen9ou" == spec.smogon_stats_format
+        assert "gen9ou" == spec.sets_format
+
+    def test_randombattle_format_data_is_unchanged(self):
+        spec = FormatSpec.from_format_string("gen9randombattle")
+        assert BattleType.RANDOM_BATTLE == spec.battle_type
+        assert not spec.badnboosted
+        assert "gen9randombattle" == spec.smogon_stats_format
+        assert "gen9randombattle" == spec.sets_format
+
     def test_bss(self):
         spec = FormatSpec.from_format_string("gen9bssregi")
         assert BattleType.BSS == spec.battle_type

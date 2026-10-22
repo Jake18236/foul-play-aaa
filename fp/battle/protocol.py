@@ -337,11 +337,15 @@ def switch_or_drag(battle, split_msg, switch_or_drag="switch"):
     # check if the pokemon exists in the reserves
     # if it does not, then the newly-created pokemon is used (for formats without team preview)
     nickname = split_msg[2]
-    temp_pkmn = Pokemon.from_switch_string(split_msg[3], nickname=nickname)
+    temp_pkmn = Pokemon.from_switch_string(
+        split_msg[3], nickname=nickname, format_spec=battle.format_spec
+    )
     pkmn = side.find_pokemon_in_reserves(temp_pkmn.name)
 
     if pkmn is None:
-        pkmn = Pokemon.from_switch_string(split_msg[3], nickname=nickname)
+        pkmn = Pokemon.from_switch_string(
+            split_msg[3], nickname=nickname, format_spec=battle.format_spec
+        )
 
         battle.mode.add_revealed_pokemon(battle, pkmn)
 
@@ -1709,7 +1713,9 @@ def illusion_end(battle, split_msg):
         previous_status = side.active.status
         previous_item = side.active.item
 
-        zoroark_from_switch_string = Pokemon.from_switch_string(split_msg[3])
+        zoroark_from_switch_string = Pokemon.from_switch_string(
+            split_msg[3], format_spec=battle.format_spec
+        )
         zoroark_reserve_index = None
         for index, pkmn in enumerate(side.reserve):
             if pkmn == zoroark_from_switch_string:

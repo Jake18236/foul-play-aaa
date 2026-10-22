@@ -7,6 +7,7 @@ from fp.data import pokedex
 from fp.search.helpers import populate_pkmn_from_set
 from fp.battle.helpers import normalize_name
 from fp.battle.state import Pokemon, Battle
+from fp.format_spec import FormatSpec
 from fp.generations import current_generation_mechanics
 from fp.data.sets import (
     PokemonMoveset,
@@ -250,7 +251,9 @@ def predict_team_likelihood(revealed_pokemon, all_pkmn_counts):
     return sorted_likelihoods
 
 
-def sample_standardbattle_pokemon(existing_pokemon: list[Pokemon], mode) -> Pokemon:
+def sample_standardbattle_pokemon(
+    existing_pokemon: list[Pokemon], mode, format_spec: FormatSpec
+) -> Pokemon:
     existing_pokemon_names = {pkmn.name for pkmn in existing_pokemon}
     selected_pkmn_name = ""
     ok = False
@@ -266,7 +269,7 @@ def sample_standardbattle_pokemon(existing_pokemon: list[Pokemon], mode) -> Poke
         if selected_pkmn_name in existing_pokemon_names:
             ok = False
 
-    pkmn = Pokemon(selected_pkmn_name, 100)
+    pkmn = Pokemon(selected_pkmn_name, 100, format_spec=format_spec)
     sample_pokemon(pkmn, mode)
     return pkmn
 
@@ -287,7 +290,9 @@ def populate_standardbattle_unrevealed_pkmn(battle: Battle):
 
     logger.info("Sampling {} unrevealed pokemon".format(6 - num_revealed_pkmn))
     while num_revealed_pkmn < 6:
-        pkmn = sample_standardbattle_pokemon(existing_pkmn, battle.mode)
+        pkmn = sample_standardbattle_pokemon(
+            existing_pkmn, battle.mode, battle.format_spec
+        )
         existing_pkmn.append(pkmn)
         battle.opponent.reserve.append(pkmn)
         num_revealed_pkmn += 1

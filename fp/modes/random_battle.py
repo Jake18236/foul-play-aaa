@@ -29,7 +29,12 @@ class RandomBattleMode(BattleMode):
         self.datasets = RandomBattleTeamDatasets()
 
     async def start_battle(
-        self, ps_websocket_client: PSWebsocketClient, pokemon_battle_type, team_dict
+        self,
+        ps_websocket_client: PSWebsocketClient,
+        pokemon_battle_type,
+        team_dict,
+        analysis_callback=None,
+        opponent_model_callback=None,
     ):
         battle, msg = await self.start_battle_common(
             ps_websocket_client, pokemon_battle_type
@@ -56,7 +61,11 @@ class RandomBattleMode(BattleMode):
         # apply the messages that were held onto
         process_battle_updates(battle)
 
-        best_move = await async_pick_move(battle)
+        best_move = await async_pick_move(
+            battle,
+            analysis_callback=analysis_callback,
+            opponent_model_callback=opponent_model_callback,
+        )
         await ps_websocket_client.send_message(battle.battle_tag, best_move)
 
         return battle

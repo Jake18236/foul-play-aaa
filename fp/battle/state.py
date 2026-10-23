@@ -564,7 +564,7 @@ class Battler:
 
         # if a team_dict exists, meaning we are playing a format where we selected our own team,
         # set the nature/evs for each pokmeon
-        if self.team_dict is not None:
+        if self.team_dict:
             team_dict_pkmn_names = [p["species"] for p in self.team_dict]
             for pkmn in [self.active] + self.reserve:
                 pkmn_other_formes = [

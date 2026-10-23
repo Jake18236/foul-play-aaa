@@ -42,7 +42,13 @@ class BSSMode(StandardBattleMode):
 
         return mega_formes_to_select_from
 
-    async def handle_team_preview(self, battle, ps_websocket_client):
+    async def handle_team_preview(
+        self,
+        battle,
+        ps_websocket_client,
+        analysis_callback=None,
+        opponent_model_callback=None,
+    ):
         battle_copy = deepcopy(battle)
         battle_copy.user.active = Pokemon.get_dummy()
         battle_copy.opponent.active = Pokemon.get_dummy()

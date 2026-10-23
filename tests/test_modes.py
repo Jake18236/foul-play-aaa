@@ -6,7 +6,7 @@ from fp.config import FoulPlayConfig
 from fp.constants import BattleType
 from fp.battle.state import Battle, Pokemon
 from fp.modes import BATTLE_MODES, battle_mode
-from fp.modes.base import BattleMode, format_decision
+from fp.modes.base import BattleMode, _parse_battle_identity, format_decision
 from fp.modes.battle_factory import (
     BattleFactoryMode,
     extract_battle_factory_tier_from_msg,
@@ -108,8 +108,12 @@ class TestBattleIsFinished:
         assert not battle_is_finished("battle-gen9ou-123", msg)
 
     def test_tie_message(self):
-        msg = ">battle-gen9ou-123\n|tie\n"
+        msg = ">battle-gen9ou-123\n|tie|\n"
         assert battle_is_finished("battle-gen9ou-123", msg)
+
+    def test_tiebreak_message_is_not_a_finished_battle(self):
+        msg = ">battle-gen9ou-123\n|tiebreak|p1\n"
+        assert not battle_is_finished("battle-gen9ou-123", msg)
 
     def test_chat_message_containing_win_string_is_excluded(self):
         msg = ">battle-gen9ou-123\n|c|☆SomePlayer|i always |win| this matchup\n"
@@ -118,6 +122,25 @@ class TestBattleIsFinished:
     def test_regular_battle_message_is_not_finished(self):
         msg = ">battle-gen9ou-123\n|move|p2a: Pikachu|Thunderbolt|p1a: Weedle\n"
         assert not battle_is_finished("battle-gen9ou-123", msg)
+
+
+class TestParseBattleIdentity:
+    def test_uses_player_protocol_when_recovered_history_has_no_title(self):
+        room = "battle-gen9badnboosted-123-randomsuffix"
+
+        assert _parse_battle_identity(
+            f">{room}\n|player|p1|AdvisorName|1|", "AdvisorName"
+        ) == (room, None)
+        assert _parse_battle_identity(
+            f">{room}\n|player|p2|OpponentName|2|", "AdvisorName"
+        ) == (room, "OpponentName")
+
+    def test_uses_title_when_available(self):
+        room = "battle-gen9badnboosted-123-randomsuffix"
+
+        assert _parse_battle_identity(
+            f">{room}\n|title|OpponentName vs. AdvisorName", "AdvisorName"
+        ) == (room, "OpponentName")
 
 
 class TestExtractBattleFactoryTierFromMsg:

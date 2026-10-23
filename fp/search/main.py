@@ -1,14 +1,18 @@
 import logging
 import random
+from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from copy import deepcopy
 
-from fp.battle.state import Battle
+from fp import constants
+from fp.battle.helpers import normalize_name
+from fp.battle.state import Battle, Pokemon
 from fp.config import FoulPlayConfig
 
 from poke_engine import State as PokeEngineState, monte_carlo_tree_search, MctsResult
 
 from fp.search.poke_engine_helpers import battle_to_poke_engine_state
+from fp.search.standard_battles import sample_pokemon
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +59,233 @@ def get_result_from_mcts(
     return res
 
 
-def find_best_move(battle: Battle) -> str:
+def _choice_text(choice) -> str:
+    if isinstance(choice, str):
+        return choice
+    if isinstance(choice, (tuple, list)):
+        return " ".join(str(part) for part in choice if part)
+    return str(choice)
+
+
+def _summarize_opponent_team(battles):
+    samples = defaultdict(
+        lambda: {
+            "probability": 0.0,
+            "known": True,
+            "moves": defaultdict(float),
+            "abilities": defaultdict(float),
+            "items": defaultdict(float),
+        }
+    )
+    total_weight = sum(chance for _, chance in battles)
+
+    if not total_weight:
+        return []
+
+    for battle, chance in battles:
+        seen = set()
+        pokemon = [battle.opponent.active, *battle.opponent.reserve]
+        for pkmn in pokemon:
+            if pkmn is None or pkmn.name in seen:
+                continue
+            seen.add(pkmn.name)
+            sample = samples[pkmn.name]
+            sample["probability"] += chance
+            sample["known"] = sample["known"] and (
+                pkmn.revealed or getattr(battle, "team_preview", False)
+            )
+            for move in pkmn.moves:
+                sample["moves"][move.name] += chance
+            if pkmn.ability:
+                sample["abilities"][pkmn.ability] += chance
+            if pkmn.item != constants.UNKNOWN_ITEM:
+                sample["items"][pkmn.item] += chance
+
+    result = []
+    for name, sample in samples.items():
+        probability = sample["probability"] / total_weight
+        ability = max(sample["abilities"], key=sample["abilities"].get, default=None)
+        item = max(sample["items"], key=sample["items"].get, default=None)
+        result.append(
+            {
+                "pokemon": name,
+                "probability": round(probability, 4),
+                "known": sample["known"],
+                "moves": [
+                    {
+                        "move": move,
+                        "probability": round(weight / sample["probability"], 4),
+                    }
+                    for move, weight in sorted(
+                        sample["moves"].items(), key=lambda item: item[1], reverse=True
+                    )[:4]
+                ],
+                "ability": ability,
+                "ability_probability": round(
+                    sample["abilities"][ability] / sample["probability"], 4
+                )
+                if ability
+                else None,
+                "item": item,
+                "item_probability": round(
+                    sample["items"][item] / sample["probability"], 4
+                )
+                if item
+                else None,
+            }
+        )
+
+    return sorted(result, key=lambda entry: entry["probability"], reverse=True)[:12]
+
+
+def _summarize_search(mcts_results, battles, selected_choice):
+    move_probabilities = defaultdict(float)
+    move_score_totals = defaultdict(float)
+    move_score_weights = defaultdict(float)
+    opponent_probabilities = defaultdict(float)
+
+    for mcts_result, sample_chance, _ in mcts_results:
+        total_visits = mcts_result.total_visits
+        if not total_visits:
+            continue
+        for option in mcts_result.side_one:
+            choice = _choice_text(option.move_choice)
+            move_probabilities[choice] += (
+                sample_chance * option.visits / total_visits
+            )
+            move_score_totals[choice] += sample_chance * option.total_score
+            move_score_weights[choice] += sample_chance * option.visits
+        for option in mcts_result.side_two:
+            choice = _choice_text(option.move_choice)
+            opponent_probabilities[choice] += (
+                sample_chance * option.visits / total_visits
+            )
+
+    choices = []
+    for move, probability in sorted(
+        move_probabilities.items(), key=lambda item: item[1], reverse=True
+    ):
+        score_weight = move_score_weights[move]
+        choices.append(
+            {
+                "move": move,
+                "probability": round(probability, 4),
+                "score": (
+                    round(move_score_totals[move] / score_weight, 4)
+                    if score_weight
+                    else None
+                ),
+            }
+        )
+
+    opponent_moves = [
+        {"move": move, "probability": round(probability, 4)}
+        for move, probability in sorted(
+            opponent_probabilities.items(), key=lambda item: item[1], reverse=True
+        )[:5]
+    ]
+    selected_text = _choice_text(selected_choice)
+    selected_rank = next(
+        (
+            rank
+            for rank, choice in enumerate(choices, 1)
+            if choice["move"] == selected_text
+        ),
+        None,
+    )
+    best_score = choices[0]["score"] if choices else None
+    selected = next(
+        (choice for choice in choices if choice["move"] == selected_text), None
+    )
+    reason = None
+    if selected and selected_rank:
+        reason = (
+            f"Ranked #{selected_rank} by weighted search visits "
+            f"({selected['probability'] * 100:.1f}%); selected from the "
+            "engine's close contenders."
+        )
+        if selected["score"] is not None:
+            reason += f" Estimated score: {selected['score']:+.2f}."
+
+    return {
+        "evaluation": best_score,
+        "selected_rank": selected_rank,
+        "reason": reason,
+        "choices": choices[:8],
+        "opponent_moves": opponent_moves,
+        "opponent_team": _summarize_opponent_team(battles),
+    }
+
+
+def _apply_opponent_model(battle: Battle, model):
+    if not model:
+        return
+
+    existing = [
+        pokemon
+        for pokemon in [battle.opponent.active, *battle.opponent.reserve]
+        if pokemon is not None
+    ]
+    known = [
+        pokemon
+        for pokemon in existing
+        if pokemon is battle.opponent.active
+        or pokemon.revealed
+        or battle.team_preview
+    ]
+    roster = known[:6]
+    seen = {pokemon.name for pokemon in roster}
+
+    for entry in model:
+        name = normalize_name(entry["pokemon"])
+        if not name:
+            continue
+
+        pokemon = next((p for p in existing if p.name == name), None)
+        if pokemon is None:
+            pokemon = Pokemon(name, 100, format_spec=battle.format_spec)
+            sample_pokemon(pokemon, battle.mode)
+
+        ability = normalize_name(entry.get("ability", ""))
+        if ability:
+            pokemon.ability = None if ability == "none" else ability
+
+        item = normalize_name(entry.get("item", ""))
+        if item:
+            pokemon.item = item
+
+        moves = [
+            normalize_name(move)
+            for move in entry.get("moves", [])
+            if isinstance(move, str) and normalize_name(move)
+        ]
+        if moves:
+            pokemon.moves = []
+            for move in moves[:4]:
+                pokemon.add_move(move)
+
+        if name not in seen and len(roster) < 6:
+            roster.append(pokemon)
+            seen.add(name)
+
+    for pokemon in existing:
+        if pokemon.name not in seen and len(roster) < 6:
+            roster.append(pokemon)
+            seen.add(pokemon.name)
+
+    active_name = battle.opponent.active.name if battle.opponent.active else None
+    battle.opponent.active = next(
+        (p for p in roster if p.name == active_name),
+        battle.opponent.active,
+    )
+    battle.opponent.reserve = [
+        pokemon
+        for pokemon in roster
+        if pokemon is not battle.opponent.active
+    ]
+
+
+def find_best_move(battle: Battle, include_analysis=False, opponent_model=None):
     battle = deepcopy(battle)
     if battle.team_preview:
         battle.user.active = battle.user.reserve.pop(0)
@@ -63,6 +293,9 @@ def find_best_move(battle: Battle) -> str:
 
     num_battles, search_time_per_battle = battle.mode.search_params(battle)
     battles = battle.mode.prepare_battles(battle, num_battles)
+    if opponent_model:
+        for sampled_battle, _ in battles:
+            _apply_opponent_model(sampled_battle, opponent_model)
 
     logger.info("Searching for a move using MCTS...")
     logger.info(
@@ -90,4 +323,6 @@ def find_best_move(battle: Battle) -> str:
 
     choice = select_move_from_mcts_results(mcts_results)
     logger.info("Choice: {}".format(choice))
+    if include_analysis:
+        return choice, _summarize_search(mcts_results, battles, choice)
     return choice

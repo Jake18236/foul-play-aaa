@@ -3,6 +3,7 @@ import concurrent.futures
 import json
 import logging
 import random
+import re
 from copy import copy, deepcopy
 
 from fp import constants
@@ -26,7 +27,12 @@ class BattleMode:
         return self
 
     async def start_battle(
-        self, ps_websocket_client: PSWebsocketClient, pokemon_battle_type, team_dict
+        self,
+        ps_websocket_client: PSWebsocketClient,
+        pokemon_battle_type,
+        team_dict,
+        analysis_callback=None,
+        opponent_model_callback=None,
     ) -> Battle:
         raise NotImplementedError
 
@@ -149,8 +155,19 @@ class BattleMode:
 
         return battle, msg
 
-    async def handle_team_preview(self, battle, ps_websocket_client):
-        await handle_team_preview(battle, ps_websocket_client)
+    async def handle_team_preview(
+        self,
+        battle,
+        ps_websocket_client,
+        analysis_callback=None,
+        opponent_model_callback=None,
+    ):
+        await handle_team_preview(
+            battle,
+            ps_websocket_client,
+            analysis_callback=analysis_callback,
+            opponent_model_callback=opponent_model_callback,
+        )
 
 
 def format_decision(battle, decision):
@@ -196,7 +213,9 @@ def format_decision(battle, decision):
     return [message, str(battle.rqid)]
 
 
-async def async_pick_move(battle):
+async def async_pick_move(
+    battle, analysis_callback=None, opponent_model_callback=None
+):
     battle_copy = deepcopy(battle)
     if not battle_copy.team_preview:
         battle_copy.user.update_from_request_json(
@@ -205,7 +224,16 @@ async def async_pick_move(battle):
 
     loop = asyncio.get_event_loop()
     with concurrent.futures.ThreadPoolExecutor() as pool:
-        best_move = await loop.run_in_executor(pool, find_best_move, battle_copy)
+        if analysis_callback:
+            opponent_model = (
+                opponent_model_callback() if opponent_model_callback else None
+            )
+            best_move, analysis = await loop.run_in_executor(
+                pool, find_best_move, battle_copy, True, opponent_model
+            )
+            analysis_callback(analysis)
+        else:
+            best_move = await loop.run_in_executor(pool, find_best_move, battle_copy)
     battle.user.last_selected_move = LastUsedMove(
         battle.user.active.name,
         best_move.removesuffix("-tera").removesuffix("-mega"),
@@ -214,13 +242,22 @@ async def async_pick_move(battle):
     return format_decision(battle_copy, best_move)
 
 
-async def handle_team_preview(battle, ps_websocket_client):
+async def handle_team_preview(
+    battle,
+    ps_websocket_client,
+    analysis_callback=None,
+    opponent_model_callback=None,
+):
     battle_copy = deepcopy(battle)
     battle_copy.user.active = Pokemon.get_dummy()
     battle_copy.opponent.active = Pokemon.get_dummy()
     battle_copy.team_preview = True
 
-    best_move = await async_pick_move(battle_copy)
+    best_move = await async_pick_move(
+        battle_copy,
+        analysis_callback=analysis_callback,
+        opponent_model_callback=opponent_model_callback,
+    )
 
     # because we copied the battle before sending it in, we need to update the last selected move here
     pkmn_name = battle.user.reserve[int(best_move[0].split()[1]) - 1].name
@@ -242,17 +279,45 @@ async def handle_team_preview(battle, ps_websocket_client):
     await ps_websocket_client.send_message(battle.battle_tag, message)
 
 
+def _parse_battle_identity(msg, user_name):
+    lines = msg.splitlines()
+    room_header = next(
+        (line for line in lines if line.startswith(">battle-")), None
+    )
+    if room_header is None:
+        return None, None
+
+    battle_tag = room_header[1:].strip()
+    normalized_user_name = user_name.casefold()
+
+    for line in lines:
+        parts = line.split("|")
+        if len(parts) > 2 and parts[1] == "title":
+            title_names = [
+                name.strip()
+                for name in re.split(r"\s+vs\.?\s+", parts[2], flags=re.IGNORECASE)
+            ]
+            if len(title_names) == 2:
+                if title_names[0].casefold() == normalized_user_name:
+                    return battle_tag, title_names[1]
+                if title_names[1].casefold() == normalized_user_name:
+                    return battle_tag, title_names[0]
+
+        if len(parts) > 3 and parts[1] == "player":
+            player_name = parts[3].strip()
+            if player_name and player_name.casefold() != normalized_user_name:
+                return battle_tag, player_name
+
+    return battle_tag, None
+
+
 async def get_battle_tag_and_opponent(ps_websocket_client: PSWebsocketClient):
     while True:
         msg = await ps_websocket_client.receive_message()
-        split_msg = msg.split("|")
-        first_msg = split_msg[0]
-        if "battle" in first_msg:
-            battle_tag = first_msg.replace(">", "").strip()
-            user_name = FoulPlayConfig.username
-            opponent_name = (
-                split_msg[4].replace(user_name, "").replace("vs.", "").strip()
-            )
+        battle_tag, opponent_name = _parse_battle_identity(
+            msg, FoulPlayConfig.username
+        )
+        if battle_tag and opponent_name:
             logger.info("Initialized {} against: {}".format(battle_tag, opponent_name))
             return battle_tag, opponent_name
 

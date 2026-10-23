@@ -39,8 +39,6 @@ class FormatSpec:
 
     @property
     def smogon_stats_format(self) -> str:
-        if self.badnboosted:
-            return "gen9ou"
         return self.base_name
 
     @property

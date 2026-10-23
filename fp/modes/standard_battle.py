@@ -29,7 +29,12 @@ class StandardBattleMode(BattleMode):
         self.smogon_sets = SmogonSets()
 
     async def start_battle(
-        self, ps_websocket_client: PSWebsocketClient, pokemon_battle_type, team_dict
+        self,
+        ps_websocket_client: PSWebsocketClient,
+        pokemon_battle_type,
+        team_dict,
+        analysis_callback=None,
+        opponent_model_callback=None,
     ):
         battle, msg = await self.start_battle_common(
             ps_websocket_client, pokemon_battle_type
@@ -74,7 +79,11 @@ class StandardBattleMode(BattleMode):
             # apply the messages that were held onto
             process_battle_updates(battle)
 
-            best_move = await async_pick_move(battle)
+            best_move = await async_pick_move(
+                battle,
+                analysis_callback=analysis_callback,
+                opponent_model_callback=opponent_model_callback,
+            )
             await ps_websocket_client.send_message(battle.battle_tag, best_move)
 
         else:
@@ -109,7 +118,12 @@ class StandardBattleMode(BattleMode):
                 pokemon_battle_type, unique_pkmn_names, msg
             )
 
-            await self.handle_team_preview(battle, ps_websocket_client)
+            await self.handle_team_preview(
+                battle,
+                ps_websocket_client,
+                analysis_callback=analysis_callback,
+                opponent_model_callback=opponent_model_callback,
+            )
 
         return battle
 

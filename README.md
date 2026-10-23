@@ -43,6 +43,18 @@ python run.py \
 --pokemon-format gen9randombattle
 ```
 
+### Showdown browser advisor
+
+Run `python advisor_server.py` and install [showdown-advisor.user.js](./showdown-advisor.user.js)
+in a userscript manager. The advisor can rebuild its state from an open battle after a page
+reload or when started mid-battle. It displays the engine's position estimate, ranked move
+choices, likely opponent actions, and sampled opponent-team predictions. Hidden-team and
+opponent-action details are estimates from the search, not confirmed information.
+Use **Use recommended action** to send the current choice to Showdown, or enable **Auto**
+to send each new choice after a randomized 3–5 second delay. Auto is off by default.
+The team model can be edited to constrain later searches to your assumed roster, moves,
+abilities, and items.
+
 ### Running with Docker
 
 **1. Clone the repository**
@@ -86,11 +98,12 @@ including HP, is doubled and capped at 255. The resulting stats are passed to `p
 which uses them for damage calculations and MCTS simulation; no native engine changes are
 needed for this rule.
 
-There is no Bad 'n Boosted usage dataset, so opponent set inference uses Gen 9 OU priors.
-This affects sampled hidden teams, not the stat calculation, and can include sets banned by
-Bad 'n Boosted. Showdown still enforces its format bans and Sleep Moves Clause; Foul Play does
-not independently validate those restrictions, so this is not full format-specific opponent
-set modeling.
+Opponent set inference uses Bad 'n Boosted usage statistics when available, searching the
+requested month and up to 12 earlier months. If none are available, it falls back to Gen 9 OU
+priors. This affects sampled hidden teams, not the stat calculation, and OU samples can include
+sets banned by Bad 'n Boosted. Showdown still enforces its format bans and Sleep Moves Clause;
+Foul Play does not independently validate those restrictions, so this is not full
+format-specific opponent set modeling.
 
 ### Re-Installing the Engine
 

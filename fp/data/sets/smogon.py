@@ -39,6 +39,7 @@ TERA_TYPE_STRING = "tera_types"
 EFFECTIVENESS = "effectiveness"
 TEAMMATES = "teammates"
 RAW_COUNT = "raw_count"
+SMOGON_STATS_HISTORY_MONTHS = 12
 
 
 class SmogonSets(PokemonSets):
@@ -55,27 +56,63 @@ class SmogonSets(PokemonSets):
         )
 
     def _get_smogon_stats_json(self, smogon_stats_url):
-        cache_file_name = ntpath.basename(smogon_stats_url)
-        cache_file = os.path.join(SMOGON_CACHE_DIR, cache_file_name)
-        if os.path.exists(cache_file):
-            with open(cache_file, "r") as f:
-                infos = json.load(f)
-            logger.info(f"Loaded from cache: {cache_file}")
-        else:
-            r = requests.get(smogon_stats_url)
-            if r.status_code == 404:
-                r = requests.get(
-                    self._get_smogon_stats_file_name(
-                        ntpath.basename(smogon_stats_url.replace("-0.json", "")),
-                        month_delta=2,
-                    )
+        game_mode = ntpath.basename(smogon_stats_url).removesuffix("-0.json")
+        current_month_url = smogon_stats_url
+
+        for month_delta in range(1, SMOGON_STATS_HISTORY_MONTHS + 2):
+            stats_url = (
+                current_month_url
+                if month_delta == 1
+                else self._get_smogon_stats_file_name(
+                    game_mode, month_delta=month_delta
                 )
-            infos = r.json()["data"]
+            )
+            historical = month_delta > 1
+            stats_month = stats_url.split("/")[-3]
+            cache_file_name = f"{stats_month}-{ntpath.basename(stats_url)}"
+            cache_file = os.path.join(SMOGON_CACHE_DIR, cache_file_name)
+
+            if os.path.exists(cache_file):
+                with open(cache_file, "r") as f:
+                    infos = json.load(f)
+                logger.info(
+                    "Loaded %s Smogon stats for %s from cache: %s",
+                    "historical" if historical else "current",
+                    stats_month,
+                    cache_file,
+                )
+                return infos
+
+            response = requests.get(stats_url)
+            if response.status_code == 404:
+                continue
+            response.raise_for_status()
+            infos = response.json()["data"]
             with open(cache_file, "w") as f:
                 json.dump(infos, f)
-            logger.info(f"Downloaded and cached from remote: {smogon_stats_url}")
+            logger.info(
+                "Downloaded and cached %s Smogon stats for %s from %s",
+                "historical" if historical else "current",
+                stats_month,
+                stats_url,
+            )
+            return infos
 
-        return infos
+        if game_mode == "gen9badnboosted":
+            logger.warning(
+                "No Bad 'n Boosted Smogon stats found in the current month or "
+                "previous %s months; "
+                "falling back to Gen 9 OU stats",
+                SMOGON_STATS_HISTORY_MONTHS,
+            )
+            return self._get_smogon_stats_json(
+                self._get_smogon_stats_file_name("gen9ou")
+            )
+
+        raise FileNotFoundError(
+            f"No Smogon stats found in the current month or previous "
+            f"{SMOGON_STATS_HISTORY_MONTHS} months for {game_mode}"
+        )
 
     def _get_pokemon_information(self, smogon_stats_url, pkmn_names) -> dict:
         infos = self._get_smogon_stats_json(smogon_stats_url)

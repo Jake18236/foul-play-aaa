@@ -54,7 +54,7 @@ class TestFormatSpecParsing:
         assert "gen9" == spec.generation
         assert BattleType.STANDARD_BATTLE == spec.battle_type
         assert spec.badnboosted
-        assert "gen9ou" == spec.smogon_stats_format
+        assert "gen9badnboosted" == spec.smogon_stats_format
         assert "gen9ou" == spec.sets_format
 
     def test_randombattle_format_data_is_unchanged(self):

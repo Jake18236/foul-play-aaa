@@ -288,7 +288,7 @@ def _apply_opponent_model(battle: Battle, model):
     ]
 
 
-def find_best_move(battle: Battle, include_analysis=False, opponent_model=None):
+def find_best_move(battle: Battle, include_analysis=False, opponent_model=None, use_opponent_memory=True):
     battle = deepcopy(battle)
     if battle.team_preview:
         battle.user.active = battle.user.reserve.pop(0)
@@ -304,7 +304,7 @@ def find_best_move(battle: Battle, include_analysis=False, opponent_model=None):
     # Only standard formats reuse teams across rematches.
     battle.opponent_memory = (
         recall(battle)
-        if battle.mode.name == constants.BattleType.STANDARD_BATTLE
+        if use_opponent_memory and battle.mode.name == constants.BattleType.STANDARD_BATTLE
         else {}
     )
     in_time_pressure = battle.time_remaining is not None and battle.time_remaining <= 60

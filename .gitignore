@@ -1,4 +1,6 @@
 logs/
+.neural-tools/node_modules/
+neural-runs/
 .venv/
 venv/
 dist/
@@ -8,6 +10,7 @@ dist/
 creds
 *.xlsx
 *.txt
+!requirements-neural.txt
 suspect_decisions.py
 fp/teams/teams
 fp/data/smogon_stats_cache

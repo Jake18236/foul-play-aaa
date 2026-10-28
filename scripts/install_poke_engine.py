@@ -11,6 +11,7 @@ from urllib.request import urlopen
 
 from engine_search_patch import patch_search
 from engine_format_patch import patch_format_rules
+from engine_neural_patch import patch_neural
 
 
 SOURCE_URL = (
@@ -18,7 +19,7 @@ SOURCE_URL = (
     "poke_engine-0.0.48.tar.gz"
 )
 SOURCE_SHA256 = "070010686f2aedff11e25137e696e301ccd80fd57c805d255464067fc905ca12"
-PATCH_VERSION = "0.0.48+foulplay.5"
+PATCH_VERSION = "0.0.48+foulplay.6"
 
 
 def patch_source(source: Path):
@@ -47,6 +48,7 @@ def patch_source(source: Path):
     damage_calc.write_text(text)
     patch_search(source)
     patch_format_rules(source)
+    patch_neural(source)
     # Expose the patch revision in installed Python package metadata. The local
     # version still satisfies requirements.txt's ==0.0.48 constraint (PEP 440).
     project = source / "pyproject.toml"

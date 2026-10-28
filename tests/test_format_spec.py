@@ -48,7 +48,7 @@ class TestFormatSpecParsing:
         assert spec.national_dex
         assert BattleType.STANDARD_BATTLE == spec.battle_type
 
-    def test_badnboosted_uses_standard_battle_and_gen9_ou_priors(self):
+    def test_badnboosted_uses_standard_battle_and_gen9_ou_team_sets(self):
         spec = FormatSpec.from_format_string("gen9badnboosted")
         assert 9 == spec.gen_number
         assert "gen9" == spec.generation

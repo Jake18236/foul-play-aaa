@@ -12,7 +12,7 @@ from fp.config import FoulPlayConfig
 from poke_engine import State as PokeEngineState, monte_carlo_tree_search, MctsResult
 
 from fp.search.poke_engine_helpers import battle_to_poke_engine_state
-from fp.search.standard_battles import sample_pokemon
+from fp.opponent_memory import recall
 
 logger = logging.getLogger(__name__)
 
@@ -37,22 +37,23 @@ def select_move_from_mcts_results(mcts_results: list[(MctsResult, float, int)]) 
 
     final_policy = sorted(final_policy.items(), key=lambda x: x[1], reverse=True)
 
-    # Consider all moves that are close to the best move
-    highest_percentage = final_policy[0][1]
-    final_policy = [i for i in final_policy if i[1] >= highest_percentage * 0.75]
-    logger.info("Considered Choices:")
-    for i, policy in enumerate(final_policy):
-        logger.info(f"\t{round(policy[1] * 100, 3)}%: {policy[0]}")
-
-    choice = random.choices(final_policy, weights=[p[1] for p in final_policy])[0]
-    return choice[0]
+    choice, probability = final_policy[0]
+    logger.info("Selected highest-visit choice: %s (%.3f%%)", choice, probability * 100)
+    return choice
 
 
 def get_result_from_mcts(
-    state: str, search_time_ms: int, index: int, threads: int
+    state: str, search_time_ms: int, index: int, threads: int, selector="visits"
 ) -> MctsResult:
     logger.debug("Calling with {} state: {}".format(index, state))
     poke_engine_state = PokeEngineState.from_string(state)
+
+    if selector == "matrix":
+        from fp.search.payoff import diagnostic_search
+
+        return diagnostic_search(
+            poke_engine_state, search_time_ms, seed=random.getrandbits(64)
+        )
 
     res = monte_carlo_tree_search(poke_engine_state, search_time_ms, threads=threads)
     logger.info("Iterations {}: {}".format(index, res.total_visits))
@@ -150,11 +151,14 @@ def _summarize_search(mcts_results, battles, selected_choice):
             continue
         for option in mcts_result.side_one:
             choice = _choice_text(option.move_choice)
-            move_probabilities[choice] += (
-                sample_chance * option.visits / total_visits
-            )
-            move_score_totals[choice] += sample_chance * option.total_score
-            move_score_weights[choice] += sample_chance * option.visits
+            move_probabilities[choice] += sample_chance * option.visits / total_visits
+            if option.visits:
+                # Scenario probabilities must not depend on how many iterations
+                # the engine happened to complete for that scenario.
+                move_score_totals[choice] += (
+                    sample_chance * option.total_score / option.visits
+                )
+                move_score_weights[choice] += sample_chance
         for option in mcts_result.side_two:
             choice = _choice_text(option.move_choice)
             opponent_probabilities[choice] += (
@@ -193,7 +197,6 @@ def _summarize_search(mcts_results, battles, selected_choice):
         ),
         None,
     )
-    best_score = choices[0]["score"] if choices else None
     selected = next(
         (choice for choice in choices if choice["move"] == selected_text), None
     )
@@ -201,19 +204,24 @@ def _summarize_search(mcts_results, battles, selected_choice):
     if selected and selected_rank:
         reason = (
             f"Ranked #{selected_rank} by weighted search visits "
-            f"({selected['probability'] * 100:.1f}%); selected from the "
-            "engine's close contenders."
+            f"({selected['probability'] * 100:.1f}%) across {len(battles)} opponent scenarios."
         )
         if selected["score"] is not None:
             reason += f" Estimated score: {selected['score']:+.2f}."
 
     return {
-        "evaluation": best_score,
+        # Native MCTS scores are in [0, 1], relative to the root heuristic.
+        # Center the panel's signed scale without calling this a win probability.
+        "evaluation": 2 * selected["score"] - 1
+        if selected and selected["score"] is not None
+        else None,
+        "evaluation_kind": "relative_search_score",
         "selected_rank": selected_rank,
         "reason": reason,
         "choices": choices[:8],
         "opponent_moves": opponent_moves,
         "opponent_team": _summarize_opponent_team(battles),
+        "sample_count": len(battles),
     }
 
 
@@ -229,9 +237,7 @@ def _apply_opponent_model(battle: Battle, model):
     known = [
         pokemon
         for pokemon in existing
-        if pokemon is battle.opponent.active
-        or pokemon.revealed
-        or battle.team_preview
+        if pokemon is battle.opponent.active or pokemon.revealed or battle.team_preview
     ]
     roster = known[:6]
     seen = {pokemon.name for pokemon in roster}
@@ -244,14 +250,13 @@ def _apply_opponent_model(battle: Battle, model):
         pokemon = next((p for p in existing if p.name == name), None)
         if pokemon is None:
             pokemon = Pokemon(name, 100, format_spec=battle.format_spec)
-            sample_pokemon(pokemon, battle.mode)
 
         ability = normalize_name(entry.get("ability", ""))
-        if ability:
+        if ability and pokemon.ability is None:
             pokemon.ability = None if ability == "none" else ability
 
         item = normalize_name(entry.get("item", ""))
-        if item:
+        if item and pokemon.item == constants.UNKNOWN_ITEM:
             pokemon.item = item
 
         moves = [
@@ -260,9 +265,9 @@ def _apply_opponent_model(battle: Battle, model):
             if isinstance(move, str) and normalize_name(move)
         ]
         if moves:
-            pokemon.moves = []
-            for move in moves[:4]:
-                pokemon.add_move(move)
+            for move in moves:
+                if len(pokemon.moves) < 4 and pokemon.get_move(move) is None:
+                    pokemon.add_move(move)
 
         if name not in seen and len(roster) < 6:
             roster.append(pokemon)
@@ -279,9 +284,7 @@ def _apply_opponent_model(battle: Battle, model):
         battle.opponent.active,
     )
     battle.opponent.reserve = [
-        pokemon
-        for pokemon in roster
-        if pokemon is not battle.opponent.active
+        pokemon for pokemon in roster if pokemon is not battle.opponent.active
     ]
 
 
@@ -291,38 +294,150 @@ def find_best_move(battle: Battle, include_analysis=False, opponent_model=None):
         battle.user.active = battle.user.reserve.pop(0)
         battle.opponent.active = battle.opponent.reserve.pop(0)
 
-    num_battles, search_time_per_battle = battle.mode.search_params(battle)
-    battles = battle.mode.prepare_battles(battle, num_battles)
+    # Constrain sampling with model hints instead of replacing a completed
+    # sampled moveset (which could erase revealed phazing/recovery moves).
     if opponent_model:
-        for sampled_battle, _ in battles:
-            _apply_opponent_model(sampled_battle, opponent_model)
+        _apply_opponent_model(battle, opponent_model)
+
+    num_battles, search_time_per_battle = battle.mode.search_params(battle)
+    selector = "visits" if battle.team_preview else FoulPlayConfig.search_selector
+    # Only standard formats reuse teams across rematches.
+    battle.opponent_memory = (
+        recall(battle)
+        if battle.mode.name == constants.BattleType.STANDARD_BATTLE
+        else {}
+    )
+    in_time_pressure = battle.time_remaining is not None and battle.time_remaining <= 60
+    if not in_time_pressure:
+        num_battles = max(2, num_battles)
+    battles = []
+    mcts_results = []
+    search_states = []
 
     logger.info("Searching for a move using MCTS...")
     logger.info(
         "Sampling {} battles at {}ms each".format(num_battles, search_time_per_battle)
     )
     with ProcessPoolExecutor(max_workers=FoulPlayConfig.parallelism) as executor:
-        futures = []
-        for index, (b, chance) in enumerate(battles):
-            state = battle_to_poke_engine_state(b).to_string()
-            logger.debug("Calling with {} state: {}".format(index, state))
-            fut = executor.submit(
-                get_result_from_mcts,
-                state,
-                search_time_per_battle,
-                index,
-                FoulPlayConfig.search_threads,
+        # At most three batches, using new states each time. Under clock pressure
+        # retain the mode's original budget.
+        for batch in range(1 if in_time_pressure else 3):
+            new_battles = battle.mode.prepare_battles(battle, num_battles)
+            # Preserve the mode's within-batch probabilities (e.g. weighted
+            # random-battle scenarios), with equal weight for each fresh batch.
+            batch_total = sum(chance for _, chance in new_battles)
+            if not new_battles or batch_total <= 0:
+                raise ValueError("No opponent scenarios available for search")
+            scale = batch / (batch + 1)
+            battles = [(b, chance * scale) for b, chance in battles]
+            mcts_results = [(res, chance * scale, i) for res, chance, i in mcts_results]
+            futures = []
+            for b, chance in new_battles:
+                chance = chance / batch_total / (batch + 1)
+                index = len(battles)
+                battles.append((b, chance))
+                state = battle_to_poke_engine_state(b).to_string()
+                search_states.append(state)
+                futures.append(
+                    (
+                        executor.submit(
+                            get_result_from_mcts,
+                            state,
+                            search_time_per_battle,
+                            index,
+                            FoulPlayConfig.search_threads,
+                            **({"selector": "matrix"} if selector == "matrix" else {}),
+                        ),
+                        chance,
+                        index,
+                    )
+                )
+            for future, chance, index in futures:
+                result = future.result()
+                if result.total_visits <= 0 or not any(
+                    option.visits for option in result.side_one
+                ):
+                    raise ValueError("Search returned no visited actions")
+                mcts_results.append((result, chance, index))
+            if batch == 2 or in_time_pressure or not _samples_disagree(mcts_results):
+                break
+            if battle.format_spec.badnboosted:
+                # Spend the remaining two batches' budget deepening the same
+                # hypotheses, rather than restarting short trees on new guesses.
+                # The native API cannot resume trees, so replace shallow results
+                # with independent searches given twice the original duration.
+                logger.info("BnB samples disagree; deepening existing scenarios")
+                futures = [
+                    (
+                        executor.submit(
+                            get_result_from_mcts,
+                            search_states[index],
+                            2 * search_time_per_battle,
+                            index,
+                            FoulPlayConfig.search_threads,
+                            **({"selector": "matrix"} if selector == "matrix" else {}),
+                        ),
+                        chance,
+                        index,
+                    )
+                    for _, chance, index in mcts_results
+                ]
+                refined_results = []
+                for future, chance, index in futures:
+                    result = future.result()
+                    if result.total_visits <= 0 or not any(
+                        option.visits for option in result.side_one
+                    ):
+                        raise ValueError("Search returned no visited actions")
+                    refined_results.append((result, chance, index))
+                mcts_results = refined_results
+                break
+            logger.info(
+                "Opponent samples disagree; searching %s additional states", num_battles
             )
-            futures.append((fut, chance, index))
-
-    mcts_results = []
-    for fut, chance, index in futures:
-        res = fut.result()
-        logger.info("Iterations {}: {}".format(index, res.total_visits))
-        mcts_results.append((res, chance, index))
 
     choice = select_move_from_mcts_results(mcts_results)
+    if selector == "matrix":
+        from fp.search.payoff import select_matrix_action
+
+        try:
+            choice = select_matrix_action(mcts_results)
+        except ValueError:
+            logger.exception("Matrix solver failed; retaining MCTS visit choice")
     logger.info("Choice: {}".format(choice))
     if include_analysis:
-        return choice, _summarize_search(mcts_results, battles, choice)
+        analysis = _summarize_search(mcts_results, battles, choice)
+        analysis["rematch_profile"] = sorted(battle.opponent_memory)
+        analysis["search_states"] = search_states
+        analysis["sample_policies"] = [
+            {
+                "index": index,
+                "weight": weight,
+                "choices": [
+                    {
+                        "move": option.move_choice,
+                        "visits": option.visits,
+                        "score": option.total_score / option.visits
+                        if option.visits
+                        else None,
+                    }
+                    for option in result.side_one
+                ],
+            }
+            for result, weight, index in mcts_results
+        ]
+        return choice, analysis
     return choice
+
+
+def _samples_disagree(results):
+    leaders = {
+        max(res.side_one, key=lambda option: option.visits).move_choice
+        for res, _, _ in results
+    }
+    policy = defaultdict(float)
+    for res, weight, _ in results:
+        for option in res.side_one:
+            policy[option.move_choice] += weight * option.visits / res.total_visits
+    ranked = sorted(policy.values(), reverse=True)
+    return len(leaders) > 1 or (len(ranked) > 1 and ranked[0] - ranked[1] < 0.10)

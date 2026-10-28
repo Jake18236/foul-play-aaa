@@ -323,13 +323,19 @@ async def get_battle_tag_and_opponent(ps_websocket_client: PSWebsocketClient):
 
 
 async def get_first_request_json(
-    ps_websocket_client: PSWebsocketClient, battle: Battle
+    ps_websocket_client: PSWebsocketClient, battle: Battle, initial_message=None
 ):
     while True:
-        msg = await ps_websocket_client.receive_message()
-        msg_split = msg.split("|")
-        if msg_split[1].strip() == "request" and msg_split[2].strip():
-            user_json = json.loads(msg_split[2].strip("'"))
+        if initial_message is not None:
+            msg, initial_message = initial_message, None
+        else:
+            msg = await ps_websocket_client.receive_message()
+        for line in msg.splitlines():
+            if not line.startswith("|request|") or not line[9:].strip():
+                continue
+            user_json = json.loads(line[9:])
+            if not user_json or "side" not in user_json:
+                continue
             battle.request_json = user_json
             battle.user.initialize_first_turn_user_from_json(
                 user_json, battle.format_spec

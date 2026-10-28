@@ -2,6 +2,8 @@ import asyncio
 import json
 from types import SimpleNamespace
 
+import pytest
+
 from advisor_server import Session, format_from_battle_room
 from fp.battle.protocol import update_battle
 from fp.battle.state import Battle, Pokemon
@@ -244,7 +246,7 @@ def test_search_summary_includes_ranked_moves_and_opponent_predictions():
         [(result, 1.0, 0)], [(battle, 1.0)], "tackle"
     )
 
-    assert analysis["evaluation"] == 0.5
+    assert analysis["evaluation"] == 0.0
     assert analysis["selected_rank"] == 1
     assert analysis["choices"][0]["move"] == "tackle"
     assert analysis["choices"][0]["probability"] == 0.6
@@ -284,3 +286,94 @@ def test_manual_opponent_model_updates_sampled_search_battles():
     assert active.item == "rockyhelmet"
     assert battle.opponent.reserve == [reserve]
     assert [move.name for move in reserve.moves] == ["stoneedge"]
+
+
+def test_repeated_preview_keeps_new_request_in_same_frame(monkeypatch):
+    monkeypatch.setattr("advisor_server.publish", lambda *args: None)
+    session = Session("battle-gen9almostanyability-123")
+    session.task = object()
+    session.seen_team_preview = True
+    session.feed(["|teampreview", '|request|{"rqid": 3}', "|sentchoice|"])
+    message = session.client.queue.get_nowait()
+    assert '|request|{"rqid": 3}' in message
+    assert "|sentchoice|" in message
+    assert "|teampreview" not in message
+
+
+@pytest.mark.parametrize("phase", ["preview", "playing", "waiting"])
+def test_aaa_midbattle_recovery_replays_history_before_search(monkeypatch, phase):
+    from unittest.mock import AsyncMock
+
+    from advisor_server import FakeClient, messages_for_foul_play
+    from fp.config import FoulPlayConfig
+
+    async def check():
+        room = "battle-gen9almostanyability-123"
+        request = {
+            "rqid": 27,
+            "active": [{"moves": [{"id": "tackle", "move": "Tackle", "pp": 35,
+                                    "maxpp": 35, "disabled": False}]}],
+            "side": {"name": "Alice", "id": "p1", "pokemon": [{
+                "ident": "p1: Pikachu", "details": "Pikachu, L100",
+                "condition": "100/200", "active": True,
+                "stats": {"atk": 100, "def": 100, "spa": 100, "spd": 100, "spe": 100},
+                "moves": ["tackle"], "baseAbility": "magicguard",
+                "ability": "magicguard", "item": "",
+            }]},
+        }
+        history = [
+            "|title|Alice vs. Bob", "|player|p1|Alice|", "|player|p2|Bob|",
+            "|clearpoke", "|poke|p1|Pikachu, L100", "|poke|p2|Gengar, L100",
+            "|teampreview", "|start",
+            "|switch|p1a: Pikachu|Pikachu, L100|200/200",
+            "|switch|p2a: Gengar|Gengar, L100|100/100",
+            "|turn|1", "|-ability|p2a: Gengar|Levitate",
+            "|-damage|p2a: Gengar|40/100", "|-boost|p2a: Gengar|spa|2",
+            "|-fieldstart|move: Electric Terrain", "|turn|7",
+            "|request|" + json.dumps(request),
+        ]
+        if phase == "preview":
+            request["teamPreview"] = True
+            request.pop("active")
+            history = history[:history.index("|start")] + ["|request|" + json.dumps(request)]
+        elif phase == "waiting":
+            request["wait"] = True
+            request.pop("active")
+            history[-1] = "|request|" + json.dumps(request)
+        client = FakeClient(room)
+        client.send_message = AsyncMock()
+        for message in messages_for_foul_play(room, history):
+            client.queue.put_nowait(message)
+        mode = StandardBattleMode()
+        monkeypatch.setattr(FoulPlayConfig, "username", "Alice", raising=False)
+        monkeypatch.setattr(FoulPlayConfig, "log_to_file", False, raising=False)
+        monkeypatch.setattr(mode, "initialize_team_preview_datasets", lambda *args: None)
+        preview = AsyncMock()
+        monkeypatch.setattr(mode, "handle_team_preview", preview)
+        snapshots = []
+
+        async def pick(battle, **kwargs):
+            snapshots.append((battle.turn, battle.opponent.active.name,
+                              battle.opponent.active.hp / battle.opponent.active.max_hp,
+                              battle.opponent.active.ability, battle.opponent.active.boosts["special-attack"],
+                              battle.field, battle.user.active.hp, battle.rqid))
+            return ["/choose move tackle", "27"]
+
+        monkeypatch.setattr("fp.modes.standard_battle.async_pick_move", pick)
+        battle = await asyncio.wait_for(mode.start_battle(client, "gen9almostanyability", {}), 1)
+        if phase == "preview":
+            preview.assert_awaited_once()
+            assert not snapshots
+            return
+        preview.assert_not_awaited()
+        assert battle.opponent.active is not None
+        if phase == "waiting":
+            assert battle.wait
+            assert battle.turn == 7
+            assert not snapshots
+            client.send_message.assert_not_awaited()
+        else:
+            assert snapshots == [(7, "gengar", 0.4, "levitate", 2, "electricterrain", 100, 27)]
+            client.send_message.assert_awaited_once_with(room, ["/choose move tackle", "27"])
+
+    asyncio.run(check())

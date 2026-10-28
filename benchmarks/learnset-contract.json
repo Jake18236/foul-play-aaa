@@ -1,0 +1,368 @@
+{
+  "source": "https://raw.githubusercontent.com/smogon/pokemon-showdown/master/data/learnsets.ts",
+  "source_sha256": "26969c5e9ca7310b701612da8c9cea217b7d43efb8cd22a7e46783a6ca9b386e",
+  "used_moves": {
+    "fluttermane": {
+      "moonblast": {
+        "learned_by": "fluttermane",
+        "sources": [
+          "9L84",
+          "9S1",
+          "9S2"
+        ]
+      },
+      "shadowball": {
+        "learned_by": "fluttermane",
+        "sources": [
+          "9M",
+          "9L42",
+          "9S0",
+          "9S1",
+          "9S2"
+        ]
+      },
+      "calmmind": {
+        "learned_by": "fluttermane",
+        "sources": [
+          "9M"
+        ]
+      },
+      "taunt": {
+        "learned_by": "fluttermane",
+        "sources": [
+          "9M"
+        ]
+      }
+    },
+    "deoxys": {
+      "taunt": {
+        "learned_by": "deoxys",
+        "sources": [
+          "9M",
+          "9L19",
+          "7M",
+          "7L19",
+          "6M",
+          "6L19",
+          "5M",
+          "5L25",
+          "4M",
+          "4L25",
+          "3M",
+          "3L15",
+          "3S0"
+        ]
+      },
+      "knockoff": {
+        "learned_by": "deoxys",
+        "sources": [
+          "9M",
+          "9L19",
+          "7T",
+          "7L19",
+          "6T",
+          "6L19",
+          "5T",
+          "5L25",
+          "4T",
+          "4L25",
+          "3L15",
+          "3S1",
+          "3S2"
+        ]
+      },
+      "stealthrock": {
+        "learned_by": "deoxys",
+        "sources": [
+          "9M",
+          "7T",
+          "6T",
+          "5T",
+          "4M"
+        ]
+      },
+      "psychoboost": {
+        "learned_by": "deoxys",
+        "sources": [
+          "9L67",
+          "7L67",
+          "6L67",
+          "6S10",
+          "5L89",
+          "5S9",
+          "4L89",
+          "4S4",
+          "4S5",
+          "4S6",
+          "4S7",
+          "4S8",
+          "3L45",
+          "3S3"
+        ]
+      }
+    },
+    "dondozo": {
+      "liquidation": {
+        "learned_by": "dondozo",
+        "sources": [
+          "9M"
+        ]
+      },
+      "bodyslam": {
+        "learned_by": "dondozo",
+        "sources": [
+          "9M",
+          "9L35"
+        ]
+      },
+      "rest": {
+        "learned_by": "dondozo",
+        "sources": [
+          "9M",
+          "9L15"
+        ]
+      },
+      "curse": {
+        "learned_by": "dondozo",
+        "sources": [
+          "9M",
+          "9E"
+        ]
+      }
+    },
+    "ribombee": {
+      "moonblast": {
+        "learned_by": "cutiefly",
+        "sources": [
+          "9E",
+          "8E",
+          "7E"
+        ]
+      },
+      "storedpower": {
+        "learned_by": "ribombee",
+        "sources": [
+          "9M"
+        ]
+      },
+      "quiverdance": {
+        "learned_by": "ribombee",
+        "sources": [
+          "9L64",
+          "8L64",
+          "7L49"
+        ]
+      },
+      "substitute": {
+        "learned_by": "ribombee",
+        "sources": [
+          "9M",
+          "8M",
+          "7M"
+        ]
+      }
+    },
+    "skarmory": {
+      "spikes": {
+        "learned_by": "skarmory",
+        "sources": [
+          "9M",
+          "9L44",
+          "8M",
+          "8L44",
+          "7L28",
+          "6L28",
+          "5L28",
+          "4L27",
+          "3L42"
+        ]
+      },
+      "whirlwind": {
+        "learned_by": "skarmory",
+        "sources": [
+          "9E",
+          "8E",
+          "7E",
+          "7V",
+          "6E",
+          "5E",
+          "4E",
+          "3E"
+        ]
+      },
+      "roost": {
+        "learned_by": "skarmory",
+        "sources": [
+          "9E",
+          "8E",
+          "7M",
+          "6M",
+          "5T",
+          "5D",
+          "4M"
+        ]
+      },
+      "thief": {
+        "learned_by": "skarmory",
+        "sources": [
+          "9M",
+          "8M",
+          "7M",
+          "7V",
+          "6M",
+          "5M",
+          "4M",
+          "3M"
+        ]
+      }
+    },
+    "pikachu": {
+      "thunderbolt": {
+        "learned_by": "pikachu",
+        "sources": [
+          "9M",
+          "9L36",
+          "9S55",
+          "8M",
+          "8L36",
+          "8V",
+          "8S51",
+          "7M",
+          "7L42",
+          "7V",
+          "7S49",
+          "6M",
+          "6L29",
+          "6S33",
+          "6S34",
+          "6S37",
+          "5M",
+          "5L29",
+          "5S26",
+          "5S27",
+          "5S30",
+          "4M",
+          "4L26",
+          "4S11",
+          "4S13",
+          "4S18",
+          "4S21",
+          "3M",
+          "3L26",
+          "3S0",
+          "3S6",
+          "3S7",
+          "3S8"
+        ]
+      },
+      "surf": {
+        "learned_by": "pikachu",
+        "sources": [
+          "9M",
+          "9S54",
+          "8M",
+          "7S47",
+          "7S49",
+          "6S33",
+          "6S41",
+          "4S9",
+          "4S11",
+          "4S14",
+          "4S16",
+          "3S3",
+          "3S5",
+          "3S7"
+        ]
+      },
+      "nastyplot": {
+        "learned_by": "pikachu",
+        "sources": [
+          "9M",
+          "9L1",
+          "8M",
+          "8L1"
+        ]
+      },
+      "voltswitch": {
+        "learned_by": "pikachu",
+        "sources": [
+          "9M",
+          "8M",
+          "7M",
+          "6M",
+          "5M",
+          "5S29"
+        ]
+      }
+    },
+    "hooh": {
+      "bravebird": {
+        "learned_by": "hooh",
+        "sources": [
+          "9M",
+          "8M",
+          "7L15",
+          "7S6",
+          "7S9",
+          "6L15",
+          "6S5",
+          "5L15",
+          "4L15"
+        ]
+      },
+      "sacredfire": {
+        "learned_by": "hooh",
+        "sources": [
+          "9L54",
+          "9S12",
+          "8L54",
+          "7L43",
+          "7V",
+          "7S6",
+          "7S7",
+          "7S8",
+          "7S9",
+          "6L43",
+          "6S4",
+          "6S5",
+          "5L43",
+          "4L43",
+          "4S1",
+          "4S2",
+          "3L77"
+        ]
+      },
+      "recover": {
+        "learned_by": "hooh",
+        "sources": [
+          "9L45",
+          "9S12",
+          "8L45",
+          "7L71",
+          "7V",
+          "7S6",
+          "6L71",
+          "6S5",
+          "5L71",
+          "4L23",
+          "3L33",
+          "3S0"
+        ]
+      },
+      "whirlwind": {
+        "learned_by": "hooh",
+        "sources": [
+          "9L1",
+          "8L1",
+          "7L1",
+          "7V",
+          "6L1",
+          "5L1",
+          "5S3",
+          "4L1",
+          "3L1"
+        ]
+      }
+    }
+  }
+}

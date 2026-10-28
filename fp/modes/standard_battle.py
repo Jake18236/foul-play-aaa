@@ -59,7 +59,7 @@ class StandardBattleMode(BattleMode):
                     break
                 msg = await ps_websocket_client.receive_message()
 
-            await get_first_request_json(ps_websocket_client, battle)
+            await get_first_request_json(ps_websocket_client, battle, msg)
 
             unique_pkmn_names = set(
                 [p.name for p in battle.user.reserve] + [battle.user.active.name]
@@ -106,7 +106,7 @@ class StandardBattleMode(BattleMode):
                 ):
                     opponent_pokemon.append(split_line[3])
 
-            await get_first_request_json(ps_websocket_client, battle)
+            await get_first_request_json(ps_websocket_client, battle, msg)
             battle.initialize_team_preview(opponent_pokemon, pokemon_battle_type)
             battle.during_team_preview()
 
@@ -117,6 +117,36 @@ class StandardBattleMode(BattleMode):
             self.initialize_team_preview_datasets(
                 pokemon_battle_type, unique_pkmn_names, msg
             )
+
+            # Recovered logs contain the original preview AND the battle that
+            # followed it. The request belongs to the current turn, so replay
+            # the history before searching instead of sending another /team.
+            history = msg.splitlines()
+            if "|start" in history:
+                for line in history[history.index("|start") + 1 :]:
+                    if line.startswith("|request|"):
+                        continue
+                    battle.msg_list.append(line)
+                    if line.startswith("|turn|"):
+                        process_battle_updates(battle)
+                if battle.msg_list:
+                    process_battle_updates(battle)
+                battle.team_preview = False
+                battle.wait = bool(battle.request_json.get(constants.WAIT))
+                battle.force_switch = bool(
+                    battle.request_json.get(constants.FORCE_SWITCH)
+                )
+                battle.user.update_from_request_json(
+                    battle.request_json, battle.format_spec
+                )
+                if not battle.wait:
+                    best_move = await async_pick_move(
+                        battle,
+                        analysis_callback=analysis_callback,
+                        opponent_model_callback=opponent_model_callback,
+                    )
+                    await ps_websocket_client.send_message(battle.battle_tag, best_move)
+                return battle
 
             await self.handle_team_preview(
                 battle,

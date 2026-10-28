@@ -18,6 +18,7 @@ class FormatSpec:
     blitz: bool = False
     national_dex: bool = False
     badnboosted: bool = False
+    almost_any_ability: bool = False
 
     @property
     def gen_string(self) -> str:
@@ -45,6 +46,8 @@ class FormatSpec:
     def sets_format(self) -> str:
         if self.badnboosted:
             return "gen9ou"
+        if self.almost_any_ability:
+            return self.base_name
         return self.full_name
 
     @classmethod
@@ -74,4 +77,8 @@ def _parse_format_string(format_string: str) -> FormatSpec:
         blitz=format_string.endswith("blitz"),
         national_dex="nationaldex" in format_string,
         badnboosted=format_string == "gen9badnboosted",
+        almost_any_ability=re.fullmatch(
+            r"gen\d+almostanyability(?:blitz)?", format_string
+        )
+        is not None,
     )

@@ -5,11 +5,14 @@ import re
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 from fp.battle.helpers import normalize_name
 from fp.config import FoulPlayConfig
 from fp.data import all_move_json, pokedex
 from fp.run_battle import pokemon_battle
+from fp.opponent_memory import remember_protocol
 
 PORT = 8765
 sessions = {}
@@ -90,9 +93,11 @@ def messages_for_foul_play(room, lines, preserve_order=False):
         if line.startswith("|request|"):
             yield f">{room}\n{line}"
     if start_at is None:
-        other = [x for x in lines if x and not (
-            x.startswith(("|title|", "|init|", "|player|", "|request|"))
-        )]
+        other = [
+            x
+            for x in lines
+            if x and not (x.startswith(("|title|", "|init|", "|player|", "|request|")))
+        ]
         if other:
             yield f">{room}\n" + "\n".join(other)
 
@@ -105,7 +110,38 @@ class FakeClient:
         self.analysis = None
 
     def set_analysis(self, analysis):
-        self.analysis = analysis
+        # Keep reproducible engine states on disk without sending large state
+        # strings to the userscript on every poll.
+        self.analysis = dict(analysis)
+        states = self.analysis.pop("search_states", [])
+        try:
+            trace_logger = logging.getLogger("advisor.decisions")
+            if not trace_logger.handlers:
+                trace_path = (
+                    Path(__file__).resolve().parent / "logs/advisor-decisions.jsonl"
+                )
+                trace_path.parent.mkdir(parents=True, exist_ok=True)
+                handler = RotatingFileHandler(
+                    trace_path, maxBytes=5_000_000, backupCount=2
+                )
+                handler.setFormatter(logging.Formatter("%(message)s"))
+                trace_logger.addHandler(handler)
+                trace_logger.setLevel(logging.INFO)
+                trace_logger.propagate = False
+            trace_logger.info(
+                json.dumps(
+                    {
+                        "room": self.room,
+                        "analysis": self.analysis,
+                        "search_states": states,
+                    }
+                )
+            )
+        except OSError:
+            logger.warning("Could not save advisor decision trace", exc_info=True)
+        session = sessions.get(self.room)
+        if session is not None:
+            session.remember()
 
     def get_opponent_model(self):
         return opponent_models.get(self.room)
@@ -138,6 +174,7 @@ class FakeClient:
     def __getattr__(self, name):
         async def noop(*args, **kwargs):
             return None
+
         return noop
 
 
@@ -146,10 +183,19 @@ def configure_once(name):
     if configured:
         return
     sys.argv = [
-        "run.py", "--websocket-uri", "ws://localhost:8000/showdown/websocket",
-        "--ps-username", name, "--bot-mode", "accept_challenge",
-        "--pokemon-format", "gen9randombattle",
-        "--search-time-ms", "1000", "--save-replay", "never",
+        "run.py",
+        "--websocket-uri",
+        "ws://localhost:8000/showdown/websocket",
+        "--ps-username",
+        name,
+        "--bot-mode",
+        "accept_challenge",
+        "--pokemon-format",
+        "gen9randombattle",
+        "--search-time-ms",
+        "500",
+        "--save-replay",
+        "never",
     ]
     FoulPlayConfig.configure()
     configured = True
@@ -168,6 +214,15 @@ class Session:
         self.seen_request = set()
         self.finished = False
         self.protocol_history = []
+        self.memory_request = None
+
+    def remember(self):
+        if self.memory_request:
+            remember_protocol(
+                self.room,
+                format_from_battle_room(self.room),
+                self.protocol_history + [self.memory_request],
+            )
 
     def feed(self, lines, recovered=False):
         if self.finished:
@@ -204,9 +259,13 @@ class Session:
         self.protocol_history.extend(
             line for line in lines if line and not line.startswith("|request|")
         )
+        for line in lines:
+            if line.startswith("|request|") and '"side"' in line:
+                self.memory_request = line
 
         # Never mistake a chat message mentioning '|win|' for battle completion.
         if any(x.startswith(("|win|", "|tie|")) for x in lines):
+            self.remember()
             self.finished = True
             publish(self.room, "Game over", "finished")
             if self.task:
@@ -214,24 +273,30 @@ class Session:
             sessions.pop(self.room, None)
             return
 
+        # Deduplicate individual startup events, never their entire frame:
+        # that frame may also contain the next actionable request.
+        filtered = []
+        for line in lines:
+            flag = (
+                "seen_title" if line.startswith("|title|") else
+                "seen_start" if line == "|start" else
+                "seen_team_preview" if line.startswith("|teampreview") else None
+            )
+            if flag:
+                if getattr(self, flag):
+                    continue
+                setattr(self, flag, True)
+            filtered.append(line)
+
         for msg in messages_for_foul_play(
-            self.room, lines, preserve_order=self.task is not None
+            self.room, filtered, preserve_order=self.task is not None
         ):
-            if "|title|" in msg:
-                if self.seen_title:
-                    continue
-                self.seen_title = True
-            if "\n|start" in msg:
-                if self.seen_start:
-                    continue
-                self.seen_start = True
-            if "\n|teampreview" in msg:
-                if self.seen_team_preview:
-                    continue
-                self.seen_team_preview = True
             if "\n|request|" in msg:
                 try:
-                    data = json.loads(msg.split("|request|", 1)[1].strip())
+                    request_line = next(
+                        line for line in msg.splitlines() if line.startswith("|request|")
+                    )
+                    data = json.loads(request_line[9:])
                     rqid = data.get("rqid")
                     if rqid is not None:
                         if rqid in self.seen_request:
@@ -320,7 +385,9 @@ class Handler(BaseHTTPRequestHandler):
                     if pokemon not in pokedex:
                         raise ValueError(f"Unknown Pokemon: {entry.get('pokemon', '')}")
                     if pokemon in seen:
-                        raise ValueError(f"Duplicate Pokemon: {entry.get('pokemon', '')}")
+                        raise ValueError(
+                            f"Duplicate Pokemon: {entry.get('pokemon', '')}"
+                        )
                     seen.add(pokemon)
                     moves = entry.get("moves", [])
                     if not isinstance(moves, list) or len(moves) > 4:
@@ -331,7 +398,9 @@ class Handler(BaseHTTPRequestHandler):
                     ):
                         raise ValueError("Ability and item must be text")
                     for move in moves:
-                        normalized_move = normalize_name(move) if isinstance(move, str) else ""
+                        normalized_move = (
+                            normalize_name(move) if isinstance(move, str) else ""
+                        )
                         if (
                             normalized_move not in all_move_json
                             and not normalized_move.startswith("hiddenpower")

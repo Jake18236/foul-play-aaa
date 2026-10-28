@@ -448,6 +448,7 @@ class Battler:
             pkmn.item = pkmn_dict[constants.ITEM] if pkmn_dict[constants.ITEM] else None
             for stat, number in pkmn_dict[constants.STATS].items():
                 pkmn.stats[constants.STAT_ABBREVIATION_LOOKUPS[stat]] = number
+            pkmn.stats_known = True
 
     def re_initialize_active_pokemon_from_request_json(self, request_json):
         """
@@ -527,6 +528,7 @@ class Battler:
             )
             for stat, number in pkmn_dict[constants.STATS].items():
                 pkmn.stats[constants.STAT_ABBREVIATION_LOOKUPS[stat]] = number
+            pkmn.stats_known = True
 
             pkmn.item = pkmn_item
             if constants.TERA_TYPE in pkmn_dict:
@@ -639,6 +641,7 @@ class Pokemon:
             self.hp = 1
 
         self.ability = None
+        self.stats_known = False
         self.types = pokedex[self.name][constants.TYPES]
         self.item = constants.UNKNOWN_ITEM
         self.removed_item = None
@@ -760,6 +763,16 @@ class Pokemon:
         pkmn = Pokemon(name, level, format_spec=format_spec)
         pkmn.nickname = nickname
         return pkmn
+
+    def can_have_ability(self, ability):
+        """Account for custom abilities when inferring unrevealed AAA traits."""
+        if self.format_spec.almost_any_ability:
+            if self.ability is not None:
+                return self.ability == ability
+            return ability not in self.impossible_abilities
+        return ability in {
+            normalize_name(a) for a in pokedex[self.name][constants.ABILITIES].values()
+        }
 
     def set_spread(self, nature, evs):
         if isinstance(evs, str):

@@ -3,6 +3,7 @@ FROM rust:1.89-slim AS build
 RUN apt update && apt install -y python3.13 make build-essential python3.13-venv
 
 COPY requirements.txt requirements.txt
+COPY scripts scripts
 
 # Replace the poke-engine version in requirements.txt
 # Matches and replaces `poke-engine/` followed by any non-space characters
@@ -14,7 +15,8 @@ RUN mkdir ./packages && \
     . venv/bin/activate && \
     # pip24 is required for --config-settings
     pip install --upgrade pip==24.2 && \
-    pip install -v --target ./packages -r requirements.txt
+    pip install -v --target ./packages -r requirements.txt && \
+    python3.13 scripts/install_poke_engine.py --feature "${GEN:-terastallization}" --target /packages
 
 FROM python:3.13-slim
 

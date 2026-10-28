@@ -3,7 +3,6 @@ import logging
 
 from fp import constants
 from fp.data import all_move_json
-from fp.data import pokedex
 from fp.battle.state import DamageDealt
 from fp.battle.state import StatRange
 from fp.search.poke_engine_helpers import poke_engine_get_damage_rolls
@@ -26,88 +25,49 @@ MOVE_END_STRINGS = {"move", "switch", "upkeep", "-miss", ""}
 
 def can_have_priority_modified(battle, pokemon, move_name):
     return (
-        "prankster"
-        in [
-            normalize_name(a)
-            for a in pokedex[pokemon.name][constants.ABILITIES].values()
-        ]
+        pokemon.can_have_ability("prankster")
         or (move_name == "grassyglide" and battle.field == constants.Terrain.GRASSY)
         or (
             move_name in all_move_json
             and all_move_json[move_name][constants.CATEGORY]
             == constants.MoveCategory.STATUS
-            and "myceliummight"
-            in [
-                normalize_name(a)
-                for a in pokedex[pokemon.name][constants.ABILITIES].values()
-            ]
+            and pokemon.can_have_ability("myceliummight")
         )
     )
 
 
 def can_have_speed_modified(battle, pokemon):
     return (
-        (
-            pokemon.item is None
-            and "unburden"
-            in [
-                normalize_name(a)
-                for a in pokedex[pokemon.name][constants.ABILITIES].values()
-            ]
-        )
+        (pokemon.item is None and pokemon.can_have_ability("unburden"))
         or (
             battle.weather == constants.Weather.RAIN
             and pokemon.ability is None
-            and "swiftswim"
-            in [
-                normalize_name(a)
-                for a in pokedex[pokemon.name][constants.ABILITIES].values()
-            ]
+            and pokemon.can_have_ability("swiftswim")
         )
         or (
             battle.weather == constants.Weather.SUN
             and pokemon.ability is None
-            and "chlorophyll"
-            in [
-                normalize_name(a)
-                for a in pokedex[pokemon.name][constants.ABILITIES].values()
-            ]
+            and pokemon.can_have_ability("chlorophyll")
         )
         or (
             battle.weather == constants.Weather.SAND
             and pokemon.ability is None
-            and "sandrush"
-            in [
-                normalize_name(a)
-                for a in pokedex[pokemon.name][constants.ABILITIES].values()
-            ]
+            and pokemon.can_have_ability("sandrush")
         )
         or (
             battle.weather in constants.HAIL_OR_SNOW
             and pokemon.ability is None
-            and "slushrush"
-            in [
-                normalize_name(a)
-                for a in pokedex[pokemon.name][constants.ABILITIES].values()
-            ]
+            and pokemon.can_have_ability("slushrush")
         )
         or (
             battle.field == constants.Terrain.ELECTRIC
             and pokemon.ability is None
-            and "surgesurfer"
-            in [
-                normalize_name(a)
-                for a in pokedex[pokemon.name][constants.ABILITIES].values()
-            ]
+            and pokemon.can_have_ability("surgesurfer")
         )
         or (
             pokemon.status == constants.Status.PARALYZED
             and pokemon.ability is None
-            and "quickfeet"
-            in [
-                normalize_name(a)
-                for a in pokedex[pokemon.name][constants.ABILITIES].values()
-            ]
+            and pokemon.can_have_ability("quickfeet")
         )
     )
 
@@ -651,11 +611,7 @@ def check_heavydutyboots(battle, msg_lines):
     if (
         not battle.gen.heavy_duty_boots_exists
         or side_to_check.active.item != constants.UNKNOWN_ITEM
-        or "magicguard"
-        in [
-            normalize_name(a)
-            for a in pokedex[side_to_check.active.name][constants.ABILITIES].values()
-        ]
+        or side_to_check.active.can_have_ability("magicguard")
     ):
         return
 
@@ -687,11 +643,7 @@ def check_heavydutyboots(battle, msg_lines):
 
     elif (
         side_to_check.side_conditions[constants.SPIKES] > 0
-        and "levitate"
-        not in [
-            normalize_name(a)
-            for a in pokedex[side_to_check.active.name][constants.ABILITIES].values()
-        ]
+        and not side_to_check.active.can_have_ability("levitate")
         and not side_to_check.active.has_type("flying")
         and side_to_check.active.ability != "levitate"
     ):
@@ -726,11 +678,7 @@ def check_heavydutyboots(battle, msg_lines):
         and not side_to_check.active.has_type("poison")
         and not side_to_check.active.has_type("steel")
         and side_to_check.active.ability != "levitate"
-        and "levitate"
-        not in [
-            normalize_name(a)
-            for a in pokedex[side_to_check.active.name][constants.ABILITIES].values()
-        ]
+        and not side_to_check.active.can_have_ability("levitate")
         and side_to_check.active.ability not in constants.IMMUNE_TO_POISON_ABILITIES
     ):
         pkmn_took_toxicspikes_poison = False
@@ -768,11 +716,7 @@ def check_heavydutyboots(battle, msg_lines):
     elif (
         side_to_check.side_conditions[constants.STICKY_WEB] > 0
         and not side_to_check.active.has_type("flying")
-        and "levitate"
-        not in [
-            normalize_name(a)
-            for a in pokedex[side_to_check.active.name][constants.ABILITIES].values()
-        ]
+        and not side_to_check.active.can_have_ability("levitate")
     ):
         pkmn_was_affected_by_stickyweb = False
         for line in msg_lines:

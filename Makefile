@@ -19,9 +19,7 @@ lint:
 	ruff check --fix
 
 poke_engine:
-	@poke_engine_version=$$(grep -oE 'poke-engine==[0-9]+\.[0-9]+\.[0-9]+' requirements.txt); \
-	echo "Installing $$poke_engine_version with feature $(GEN)"; \
-	pip uninstall -y poke-engine && pip install -v --force-reinstall --no-cache-dir $$poke_engine_version --config-settings="build-args=--features poke-engine/$(GEN) --no-default-features"
+	python scripts/install_poke_engine.py --feature $(if $(GEN),$(GEN),terastallization)
 
 # This assumes that the pmariglia/poke-engine repository is in the same directory as foul-play
 poke_engine_local:

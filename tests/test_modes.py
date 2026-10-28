@@ -272,3 +272,35 @@ class TestModeRegistry:
     def test_base_mode_get_all_remaining_sets_raises(self):
         with pytest.raises(ValueError):
             BattleMode().get_all_remaining_sets(Pokemon("pikachu", 100))
+
+
+@pytest.mark.parametrize("already_received", [False, True])
+def test_first_request_accepts_batched_aaa_protocol(already_received):
+    import asyncio
+    import json
+    from unittest.mock import Mock
+
+    from fp.modes.base import get_first_request_json
+
+    async def check():
+        request = {"rqid": 3, "teamPreview": True, "side": {"pokemon": []}}
+        queue = asyncio.Queue()
+        message = (
+            ">battle-gen9almostanyability-123\n|teampreview\n"
+            + "|request|" + json.dumps(request) + "\n|sentchoice|"
+        )
+        if not already_received:
+            queue.put_nowait(message)
+        client = Mock(receive_message=queue.get)
+        battle = Mock()
+        await asyncio.wait_for(
+            get_first_request_json(client, battle, message if already_received else None),
+            timeout=0.1,
+        )
+        assert battle.request_json == request
+        assert battle.rqid == 3
+        battle.user.initialize_first_turn_user_from_json.assert_called_once_with(
+            request, battle.format_spec
+        )
+
+    asyncio.run(check())

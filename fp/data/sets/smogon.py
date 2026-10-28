@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import ntpath
 import os
 import typing
@@ -18,6 +19,7 @@ from fp.data.sets.base import (
     PokemonSet,
     PokemonSets,
     spreads_are_alike,
+    repair_traits,
 )
 from fp.format_spec import FormatSpec
 from fp.generations import current_generation_mechanics
@@ -121,6 +123,14 @@ class SmogonSets(PokemonSets):
         final_infos = {}
         for pkmn_name, pkmn_information in infos.items():
             normalized_name = normalize_name(pkmn_name)
+            raw_count = pkmn_information.get("Raw count", 0)
+            if (
+                normalized_name not in pokedex
+                or not math.isfinite(raw_count)
+                or raw_count <= 0
+            ):
+                logger.warning("Skipping unusable usage entry for %s", pkmn_name)
+                continue
             self.all_pkmn_counts[normalized_name] = {}
             self.all_pkmn_counts[normalized_name][RAW_COUNT] = pkmn_information[
                 "Raw count"
@@ -161,8 +171,28 @@ class SmogonSets(PokemonSets):
             ].items():
                 counter_name = normalize_name(counter_name)
                 if counter_name in pkmn_names:
+                    if isinstance(counter_information, dict):
+                        counter_probability = counter_information.get("p")
+                    elif (
+                        isinstance(counter_information, (list, tuple))
+                        and len(counter_information) >= 2
+                    ):
+                        # Older Smogon stats encode checks and counters as
+                        # [sample_count, probability, standard_deviation].
+                        counter_probability = counter_information[1]
+                    else:
+                        logger.warning(
+                            "Skipping malformed checks-and-counters entry for %s vs %s: %r",
+                            normalized_name,
+                            counter_name,
+                            counter_information,
+                        )
+                        continue
+
+                    if counter_probability is None:
+                        continue
                     matchup_effectiveness[counter_name] = round(
-                        1 - counter_information["p"], 2
+                        1 - counter_probability, 2
                     )
 
             for spread, count in sorted(
@@ -193,11 +223,14 @@ class SmogonSets(PokemonSets):
                 if count > 0:
                     abilities.append((ability, count / total_count))
 
-            for tera_type, count in pkmn_information["Tera Types"].items():
+            # Formats with Terastallization banned may omit this field entirely.
+            for tera_type, count in pkmn_information.get("Tera Types", {}).items():
                 if tera_type == "nothing":
                     tera_type = "typeless"
                 if count > 0:
                     tera_types.append((tera_type, count / total_count))
+            if not tera_types:
+                tera_types.append(("typeless", 1.0))
 
             final_infos[normalized_name][SPREADS_STRING] = sorted(
                 spreads, key=lambda x: x[2], reverse=True
@@ -312,23 +345,17 @@ class SmogonSets(PokemonSets):
 
         if not remaining_sets:
             for pkmn_set in self.get_pkmn_sets_from_pkmn_name(pkmn):
-                if pkmn_set.set_makes_sense(
-                    pkmn,
-                    match_ability=False,
-                    match_item=False,
-                    match_tera=False,
-                    speed_check=False,
-                ):
-                    remaining_sets.append(pkmn_set)
+                repaired = repair_traits(pkmn, pkmn_set)
+                if repaired is not None:
+                    remaining_sets.append(repaired)
 
         return remaining_sets
 
     def move_usage_rates(self, pkmn: Pokemon) -> list[tuple[str, float]]:
         # (move, usage_rate) pairs sorted by usage; smogon stats carry no
         # move associations so this is the only moveset information available
-        return self.get_pkmn_by_name_in_dict(pkmn, self.raw_pkmn_sets).get(
-            MOVES_STRING, []
-        )
+        raw = self.get_pkmn_by_name_in_dict(pkmn, self.raw_pkmn_sets)
+        return raw.get(MOVES_STRING, []) if isinstance(raw, dict) else []
 
     def get_raw_count(self, pkmn_name) -> int | None:
         if pkmn_name not in self.all_pkmn_counts:

@@ -1,8 +1,10 @@
 import logging
+import math
 import random
 from copy import deepcopy, copy
 
 from fp import constants
+from fp.opponent_memory import apply_prior
 from fp.data import pokedex
 from fp.search.helpers import populate_pkmn_from_set
 from fp.battle.helpers import normalize_name
@@ -16,6 +18,7 @@ from fp.data.sets import (
     RAW_COUNT,
     TEAMMATES,
 )
+from fp.data.sets.base import repair_traits
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +71,8 @@ def sample_pokemon_moveset_with_known_pkmn_set(
     for pkmn_moveset in mode.team_datasets.get_all_possible_move_combinations(
         pkmn, pkmn_set
     ):
+        if not math.isfinite(pkmn_moveset.count) or pkmn_moveset.count <= 0:
+            continue
         if not PredictedPokemonSet(
             pkmn_set=pkmn_set,
             pkmn_moveset=pkmn_moveset,
@@ -89,7 +94,7 @@ def sample_pokemon_moveset_with_known_pkmn_set(
             remaining_team_movesets, weights=[m[1] for m in remaining_team_movesets]
         )[0]
         for mv in sampled_moveset:
-            if mv not in pkmn_known_moves:
+            if len(pkmn_known_moves) < 4 and mv not in pkmn_known_moves:
                 pkmn_known_moves.append(mv)
 
     # If a full moveset was acquired from #1, we don't need to sample smogon moves
@@ -100,28 +105,35 @@ def sample_pokemon_moveset_with_known_pkmn_set(
     smogon_moves = [
         m
         for m in mode.smogon_sets.move_usage_rates(pkmn)
-        if m[0] not in pkmn_known_moves
+        if m[0] not in pkmn_known_moves and math.isfinite(m[1]) and m[1] > 0
     ]
     moves_adjusted_probabilities = adjust_probabilities_for_sampling(
-        smogon_moves, 4 - num_known_moves
+        [(m, min(1.0, rate)) for m, rate in smogon_moves], 4 - len(pkmn_known_moves)
     )
-    index = 0
-    while True:
-        if len(pkmn_known_moves) >= 4 or not moves_adjusted_probabilities:
-            break
-        index = index % len(moves_adjusted_probabilities)
-        mv, chance = moves_adjusted_probabilities[index]
-        if random.random() < chance:
-            pkmn_known_moves.append(mv)
-            if not PredictedPokemonSet(
-                pkmn_set=pkmn_set,
-                pkmn_moveset=PokemonMoveset(moves=pkmn_known_moves),
-            ).set_makes_logical_sense():
-                pkmn_known_moves.pop()
-
-            moves_adjusted_probabilities.pop(index)
-        else:
-            index += 1  # index is only incremented if the move is not added
+    moves_adjusted_probabilities = [
+        (m, rate)
+        for m, rate in moves_adjusted_probabilities
+        if math.isfinite(rate) and rate > 0
+    ]
+    # Bounded weighted sampling without replacement. The old Bernoulli loop
+    # could spin forever on zero rates or when the RNG never accepted a move.
+    while len(pkmn_known_moves) < 4 and moves_adjusted_probabilities:
+        # Preserve deterministic order for certain-usage candidates.
+        index = next(
+            (i for i, (_, p) in enumerate(moves_adjusted_probabilities) if p == 1), None
+        )
+        if index is None:
+            index = random.choices(
+                range(len(moves_adjusted_probabilities)),
+                weights=[p for _, p in moves_adjusted_probabilities],
+            )[0]
+        mv, _ = moves_adjusted_probabilities.pop(index)
+        pkmn_known_moves.append(mv)
+        if not PredictedPokemonSet(
+            pkmn_set=pkmn_set,
+            pkmn_moveset=PokemonMoveset(moves=pkmn_known_moves),
+        ).set_makes_logical_sense():
+            pkmn_known_moves.pop()
 
     return pkmn_known_moves
 
@@ -203,6 +215,9 @@ def _sample_pokemon(pkmn: Pokemon, mode):
     # 3: Try to sample from SmogonSets including moves
     # Sample a SmogonSet and then repeat the same process as in 2 to get a moveset
     remaining_smogon_sets = mode.smogon_sets.get_all_remaining_trait_combinations(pkmn)
+    remaining_smogon_sets = [
+        s for s in remaining_smogon_sets if math.isfinite(s.count) and s.count > 0
+    ]
     remaining_smogon_sets = get_filtered_smogon_sets(pkmn, remaining_smogon_sets)
     if remaining_smogon_sets:
         sampled_smogon_set = deepcopy(
@@ -221,11 +236,29 @@ def _sample_pokemon(pkmn: Pokemon, mode):
         populate_pkmn_from_set(pkmn, sampled_set, source="smogonsets")
         return
 
+    # Full-set priors can be stale after a reveal (or consumed item). Salvage
+    # compatible unknown details around observations instead of leaving a blank
+    # opponent or reviving contradicted traits through an unchecked fallback.
+    for candidate in mode.team_datasets.get_pkmn_sets_from_pkmn_name(pkmn):
+        repaired = repair_traits(pkmn, candidate.pkmn_set)
+        if repaired is None:
+            continue
+        predicted = PredictedPokemonSet(repaired, candidate.pkmn_moveset)
+        populate_pkmn_from_set(pkmn, predicted, source="teamdatasets-repaired")
+        return
     logger.warning(f"Could not sample {pkmn.name}")
 
 
 def predict_team_likelihood(revealed_pokemon, all_pkmn_counts):
     revealed_set = set(revealed_pokemon)
+    informative = {
+        name
+        for name in revealed_set
+        if all_pkmn_counts.get(name, {}).get(RAW_COUNT, 0) > 0
+    }
+    total_count = sum(
+        max(0, info.get(RAW_COUNT, 0)) for info in all_pkmn_counts.values()
+    )
     likelihoods = {}
 
     for pkmn in all_pkmn_counts.keys():
@@ -233,7 +266,7 @@ def predict_team_likelihood(revealed_pokemon, all_pkmn_counts):
             continue
 
         joint_probs = []
-        for revealed in revealed_set:
+        for revealed in informative:
             try:
                 co_count = all_pkmn_counts[revealed][TEAMMATES][pkmn]
             except KeyError:
@@ -242,7 +275,13 @@ def predict_team_likelihood(revealed_pokemon, all_pkmn_counts):
             prob = co_count / all_pkmn_counts[revealed][RAW_COUNT]
             joint_probs.append(prob)
 
-        likelihoods[pkmn] = sum(joint_probs) / len(joint_probs)
+        likelihoods[pkmn] = (
+            sum(joint_probs) / len(joint_probs)
+            if joint_probs
+            else all_pkmn_counts[pkmn].get(RAW_COUNT, 0) / total_count
+            if total_count
+            else 1.0
+        )
 
     sorted_likelihoods = dict(
         sorted(likelihoods.items(), key=lambda x: x[1], reverse=True)
@@ -255,19 +294,24 @@ def sample_standardbattle_pokemon(
     existing_pokemon: list[Pokemon], mode, format_spec: FormatSpec
 ) -> Pokemon:
     existing_pokemon_names = {pkmn.name for pkmn in existing_pokemon}
-    selected_pkmn_name = ""
-    ok = False
-    while not ok:
-        ok = True
-        sample_weights = predict_team_likelihood(
-            existing_pokemon_names,
-            mode.smogon_sets.all_pkmn_counts,
-        )
-        keys = list(sample_weights.keys())[:50]
-        values = list(sample_weights.values())[:50]
-        selected_pkmn_name = random.choices(keys, weights=values)[0]
-        if selected_pkmn_name in existing_pokemon_names:
-            ok = False
+    sample_weights = predict_team_likelihood(
+        existing_pokemon_names, mode.smogon_sets.all_pkmn_counts
+    )
+    keys = [name for name in sample_weights if name in pokedex][:50]
+    if not keys:
+        raise ValueError("No unseen species with usable set priors")
+    values = [
+        max(0, sample_weights[name]) if math.isfinite(sample_weights[name]) else 0
+        for name in keys
+    ]
+    if not sum(values):
+        values = [
+            max(0, mode.smogon_sets.all_pkmn_counts[name].get(RAW_COUNT, 0))
+            for name in keys
+        ]
+    selected_pkmn_name = random.choices(keys, weights=values if sum(values) else None)[
+        0
+    ]
 
     pkmn = Pokemon(selected_pkmn_name, 100, format_spec=format_spec)
     sample_pokemon(pkmn, mode)
@@ -303,6 +347,10 @@ def prepare_battles(battle: Battle, num_battles: int) -> list[(Battle, float)]:
     for index in range(num_battles):
         logger.info("Sampling battle {}".format(index))
         battle_copy = deepcopy(battle)
+        # Stratify rather than flipping a coin: even a two-scenario batch must
+        # include the remembered counterplay alongside the general datasets.
+        if index % 2 == 0:
+            apply_prior(battle_copy, getattr(battle, "opponent_memory", {}))
         if battle_copy.mega_evolve_possible():
             battle.mode.sample_mega_evolution(
                 battle_copy,
@@ -316,6 +364,12 @@ def prepare_battles(battle: Battle, num_battles: int) -> list[(Battle, float)]:
 
         if not battle.gen.has_team_preview:
             populate_standardbattle_unrevealed_pkmn(battle_copy)
+        for pkmn in [battle_copy.opponent.active, *battle_copy.opponent.reserve]:
+            if pkmn is not None and pkmn.is_alive() and not pkmn.moves:
+                raise ValueError(
+                    f"No usable move evidence or set prior for {pkmn.name}; "
+                    "refusing to simulate an opponent with no moves"
+                )
         battle_copy.opponent.lock_moves()
         sampled_battles.append((battle_copy, 1 / num_battles))
 

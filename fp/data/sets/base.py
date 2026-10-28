@@ -5,7 +5,7 @@ import logging
 import os
 import typing
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Optional, Tuple
 
 import requests
@@ -419,6 +419,28 @@ class PokemonSet:
         return (
             ability_check and item_check and speed_check and level_check and tera_check
         )
+
+
+def repair_traits(pkmn, candidate):
+    """Repair a stale prior around observations; never relax those observations."""
+    repaired = replace(candidate)
+    if pkmn.ability is not None:
+        repaired.ability = pkmn.ability
+    elif repaired.ability in pkmn.impossible_abilities:
+        return None
+    if pkmn.item != constants.UNKNOWN_ITEM:
+        repaired.item = pkmn.item
+    elif repaired.item in pkmn.impossible_items or (
+        repaired.item in constants.CHOICE_ITEMS and not pkmn.can_have_choice_item
+    ):
+        return None
+    if pkmn.tera_type:
+        repaired.tera_type = pkmn.tera_type
+    if pkmn.stats_known:
+        repaired.nature, repaired.evs = pkmn.nature, tuple(pkmn.evs)
+    if not pkmn.stats_known and not repaired.speed_check(pkmn):
+        return None
+    return repaired
 
 
 @dataclass

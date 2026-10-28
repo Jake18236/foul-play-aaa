@@ -27,6 +27,17 @@ Clone the repository with `git clone https://github.com/pmariglia/foul-play.git`
 
 Install the requirements with `pip install -r requirements.txt`.
 
+Then run `python scripts/install_poke_engine.py` to build the pinned native engine
+with this project's mechanics fixes. Rust and a working C compiler are required.
+For another generation, pass e.g. `--feature gen4`. The build verifies the upstream
+source archive's SHA-256 before applying the patch. CI and Docker builds apply it
+automatically.
+
+The patched engine enforces AAA's Terastal Clause for both teams throughout
+search, including after switches. Re-run the installer in the advisor's Python
+environment after updating this checkout, then restart the advisor. Randbats
+and other formats retain their existing Tera behavior.
+
 Note: Requires Rust to be installed on your machine to build the engine.
 
 **4. Run**
@@ -90,6 +101,21 @@ See [the engine docs](https://poke-engine.readthedocs.io/en/latest/) for more in
 
 The engine must be built from source if installing locally so you must have rust installed on your machine.
 
+### [Gen 9] Almost Any Ability
+
+Showdown's `gen9almostanyability` format works with the advisor userscript and the
+standard Gen 9 search engine. Opponent predictions use AAA-specific Showdown sets,
+replay datasets when available, and Smogon AAA usage statistics (including up to
+12 earlier months). AAA does not fall back to OU sets or OU ability statistics.
+Missing Terastallization statistics are handled for formats where Tera is banned.
+
+Ability inference allows abilities outside each species' normal pool. Unknown
+abilities are treated conservatively when checking speed, priority, hazard immunity,
+and Life Orb recoil. Revealed abilities and abilities entered in the advisor's
+team model feed into search as usual. Species stats remain unchanged. Showdown
+enforces AAA bans and clauses; sampled sets are not independently validated against
+every format restriction.
+
 ### [Gen 9] Bad 'n Boosted
 
 Showdown's `gen9badnboosted` format is handled as a standard Gen 9 battle. Foul Play applies
@@ -100,12 +126,69 @@ needed for this rule.
 
 Opponent set inference uses Bad 'n Boosted usage statistics when available, searching the
 requested month and up to 12 earlier months. If none are available, it falls back to Gen 9 OU
-priors. This affects sampled hidden teams, not the stat calculation, and OU samples can include
-sets banned by Bad 'n Boosted. Showdown still enforces its format bans and Sleep Moves Clause;
-Foul Play does not independently validate those restrictions, so this is not full
-format-specific opponent set modeling.
+usage. The bundled team-set source remains Gen 9 OU, so its samples can include sets banned by
+Bad 'n Boosted. Search effort defaults to 500 ms per state and can be adjusted with
+`--search-time-ms`. Move selection returns the highest-visit action from the sampled searches.
+Showdown enforces format bans and Sleep Moves Clause, but Foul Play does not independently
+validate every sampled set against those restrictions.
+
+Search uses at least two opponent scenarios when more than 60 seconds remain on the
+reported clock (or no clock is reported). If the scenarios prefer different actions,
+or the top two actions are within 10 percentage points of weighted visits, it samples
+another batch, up to three batches total. This can use up to three times the initial
+search budget. Under clock pressure it keeps the mode's original sample count and budget.
+Advisor analysis includes the total scenario count.
+
+For Bad 'n Boosted, disagreement instead triggers a longer search of the same
+sampled positions: each is searched again with twice the initial time, and those
+results replace the initial results. This keeps the previous maximum compute
+budget while spending more time looking ahead within each scenario. Clock-pressure
+searches retain their original budget. The native API starts a fresh tree for each
+search; it does not support resuming an existing tree.
+
+The panel's search outlook is a centered heuristic search score, not a calibrated
+win probability or an absolute position evaluation. Native MCTS evaluates unfinished
+leaves relative to the starting position; it does not play every simulation to the
+end. Scores are averaged using opponent scenario probabilities rather than each
+scenario's iteration count. Full-game rollouts or a different leaf evaluator require
+changes to the native engine.
+
+The advisor saves directly revealed moves, items, and abilities after recommendations and at game end to
+`fp/data/local_data/opponent_memory.json`. Profiles are keyed by format and normalized
+opponent username, retain ten games per opponent, and expire after 90 days. In standard
+battles, a profile is reused only when its roster contains the currently known roster.
+Alternating sampled scenarios use that prior before sampling unknown set details, starting
+with the first scenario so a small batch cannot miss it entirely; the rest
+use the usual datasets. Current revelations and incompatible full movesets take precedence.
+Games containing Illusion reveals or Transform are omitted, and sampled guesses and manual
+team edits are never recorded as confirmed observations. Restart the advisor to load these
+code changes; no userscript update is required. Delete the memory file to reset learning.
+Revealed moves and their PP/disabled state survive dataset fallbacks and manual model edits.
+Manual model hints are applied before filling unknown set details.
+
+The advisor also records recommendations, per-scenario policies, and serialized engine states
+in `logs/advisor-decisions.jsonl` for reproducing poor decisions. The trace rotates at 5 MB
+and retains two backups. Search states stay on disk and are omitted from browser polling.
 
 ### Re-Installing the Engine
+
+Use `python scripts/install_poke_engine.py --feature terastallization` for the
+patched Gen 9 engine, or `make poke_engine GEN=gen4` for another generation.
+The installed package version is `0.0.48+foulplay.3`. Installing the plain upstream
+package replaces the patch.
+
+This fixes an upstream Unaware bug: critical hits incorrectly used offensive boosts
+or defensive drops that Unaware should ignore. The regression tests cover physical
+and special damage, Psystrike, Body Press, Mold Breaker, and Stored Power. This is a
+damage-mechanics fix; it does not replace the native leaf evaluator or implement
+opponent action learning.
+
+The patched engine also exposes seeded search and joint root-action statistics
+for the [reproducible selector benchmark](./benchmarks/README.md). The experimental
+`--search-selector matrix` computes a mixed payoff-matrix policy using the current
+heuristic evaluator; it does not include a trained value model. The browser advisor
+can opt in through `FOUL_PLAY_SEARCH_SELECTOR=matrix`. The default remains
+visit-based MCTS selection. Run the benchmark before changing that default.
 
 It is common to want to re-install the engine for different generations of Pokémon.
 

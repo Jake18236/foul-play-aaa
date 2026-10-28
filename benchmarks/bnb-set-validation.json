@@ -1,0 +1,316 @@
+{
+  "showdown_revision": "1636bf6d0848fb3c9330576963a647d4e179d278",
+  "format": "gen9badnboosted",
+  "catalog": [
+    {
+      "species": "fluttermane",
+      "ability": "protosynthesis",
+      "item": "leftovers",
+      "nature": "timid",
+      "moves": "moonblast shadowball calmmind taunt"
+    },
+    {
+      "species": "deoxys",
+      "ability": "pressure",
+      "item": "lifeorb",
+      "nature": "timid",
+      "moves": "psychoboost knockoff stealthrock taunt"
+    },
+    {
+      "species": "ribombee",
+      "ability": "shielddust",
+      "item": "leftovers",
+      "nature": "timid",
+      "moves": "moonblast storedpower quiverdance substitute"
+    },
+    {
+      "species": "dondozo",
+      "ability": "unaware",
+      "item": "leftovers",
+      "nature": "careful",
+      "moves": "liquidation bodypress rest curse"
+    },
+    {
+      "species": "skarmory",
+      "ability": "sturdy",
+      "item": "leftovers",
+      "nature": "impish",
+      "moves": "spikes whirlwind roost bravebird"
+    },
+    {
+      "species": "hooh",
+      "ability": "regenerator",
+      "item": "heavydutyboots",
+      "nature": "careful",
+      "moves": "sacredfire bravebird recover whirlwind"
+    },
+    {
+      "species": "pikachu",
+      "ability": "static",
+      "item": "lightball",
+      "nature": "timid",
+      "moves": "thunderbolt surf nastyplot voltswitch"
+    },
+    {
+      "species": "persianalola",
+      "ability": "furcoat",
+      "item": "heavydutyboots",
+      "nature": "timid",
+      "moves": "foulplay partingshot taunt knockoff"
+    },
+    {
+      "species": "clefairy",
+      "ability": "magicguard",
+      "item": "leftovers",
+      "nature": "bold",
+      "moves": "moonblast moonlight calmmind knockoff"
+    },
+    {
+      "species": "clodsire",
+      "ability": "unaware",
+      "item": "leftovers",
+      "nature": "careful",
+      "moves": "earthquake toxic recover stealthrock"
+    },
+    {
+      "species": "regieleki",
+      "ability": "transistor",
+      "item": "heavydutyboots",
+      "nature": "timid",
+      "moves": "thunderbolt voltswitch terablast rapidspin"
+    },
+    {
+      "species": "blissey",
+      "ability": "naturalcure",
+      "item": "heavydutyboots",
+      "nature": "bold",
+      "moves": "seismictoss softboiled thunderwave stealthrock"
+    },
+    {
+      "species": "ninetalesalola",
+      "ability": "snowwarning",
+      "item": "lightclay",
+      "nature": "timid",
+      "moves": "blizzard moonblast auroraveil encore"
+    },
+    {
+      "species": "talonflame",
+      "ability": "flamebody",
+      "item": "heavydutyboots",
+      "nature": "jolly",
+      "moves": "bravebird flareblitz roost willowisp"
+    },
+    {
+      "species": "weezinggalar",
+      "ability": "levitate",
+      "item": "heavydutyboots",
+      "nature": "bold",
+      "moves": "strangesteam willowisp painsplit defog"
+    },
+    {
+      "species": "zacian",
+      "ability": "intrepidsword",
+      "item": "leftovers",
+      "nature": "jolly",
+      "moves": "playrough closecombat swordsdance crunch"
+    },
+    {
+      "species": "mewtwo",
+      "ability": "pressure",
+      "item": "lifeorb",
+      "nature": "timid",
+      "moves": "psystrike icebeam aurasphere recover"
+    },
+    {
+      "species": "gliscor",
+      "ability": "poisonheal",
+      "item": "toxicorb",
+      "nature": "impish",
+      "moves": "earthquake toxic protect spikes"
+    },
+    {
+      "species": "greattusk",
+      "ability": "protosynthesis",
+      "item": "heavydutyboots",
+      "nature": "jolly",
+      "moves": "headlongrush closecombat knockoff rapidspin"
+    },
+    {
+      "species": "ironbundle",
+      "ability": "quarkdrive",
+      "item": "heavydutyboots",
+      "nature": "timid",
+      "moves": "hydropump freezedry flipturn encore"
+    },
+    {
+      "species": "corviknight",
+      "ability": "pressure",
+      "item": "leftovers",
+      "nature": "impish",
+      "moves": "bodypress irondefense roost defog"
+    },
+    {
+      "species": "screamtail",
+      "ability": "protosynthesis",
+      "item": "leftovers",
+      "nature": "timid",
+      "moves": "dazzlinggleam wish protect encore"
+    },
+    {
+      "species": "klefki",
+      "ability": "prankster",
+      "item": "leftovers",
+      "nature": "bold",
+      "moves": "spikes thunderwave playrough lightscreen"
+    },
+    {
+      "species": "alomomola",
+      "ability": "regenerator",
+      "item": "heavydutyboots",
+      "nature": "bold",
+      "moves": "scald flipturn wish protect"
+    },
+    {
+      "species": "hatterene",
+      "ability": "magicbounce",
+      "item": "leftovers",
+      "nature": "bold",
+      "moves": "drainingkiss psyshock calmmind nuzzle"
+    },
+    {
+      "species": "serperior",
+      "ability": "contrary",
+      "item": "leftovers",
+      "nature": "timid",
+      "moves": "leafstorm glare substitute dragonpulse"
+    },
+    {
+      "species": "garganacl",
+      "ability": "purifyingsalt",
+      "item": "leftovers",
+      "nature": "careful",
+      "moves": "saltcure recover protect earthquake"
+    },
+    {
+      "species": "gengar",
+      "ability": "cursedbody",
+      "item": "lifeorb",
+      "nature": "timid",
+      "moves": "shadowball sludgewave focusblast nastyplot"
+    }
+  ],
+  "sets": [
+    {
+      "species": "fluttermane",
+      "problems": []
+    },
+    {
+      "species": "deoxys",
+      "problems": []
+    },
+    {
+      "species": "ribombee",
+      "problems": []
+    },
+    {
+      "species": "dondozo",
+      "problems": []
+    },
+    {
+      "species": "skarmory",
+      "problems": []
+    },
+    {
+      "species": "hooh",
+      "problems": []
+    },
+    {
+      "species": "pikachu",
+      "problems": []
+    },
+    {
+      "species": "persianalola",
+      "problems": []
+    },
+    {
+      "species": "clefairy",
+      "problems": []
+    },
+    {
+      "species": "clodsire",
+      "problems": []
+    },
+    {
+      "species": "regieleki",
+      "problems": []
+    },
+    {
+      "species": "blissey",
+      "problems": []
+    },
+    {
+      "species": "ninetalesalola",
+      "problems": []
+    },
+    {
+      "species": "talonflame",
+      "problems": []
+    },
+    {
+      "species": "weezinggalar",
+      "problems": []
+    },
+    {
+      "species": "zacian",
+      "problems": []
+    },
+    {
+      "species": "mewtwo",
+      "problems": []
+    },
+    {
+      "species": "gliscor",
+      "problems": []
+    },
+    {
+      "species": "greattusk",
+      "problems": []
+    },
+    {
+      "species": "ironbundle",
+      "problems": []
+    },
+    {
+      "species": "corviknight",
+      "problems": []
+    },
+    {
+      "species": "screamtail",
+      "problems": []
+    },
+    {
+      "species": "klefki",
+      "problems": []
+    },
+    {
+      "species": "alomomola",
+      "problems": []
+    },
+    {
+      "species": "hatterene",
+      "problems": []
+    },
+    {
+      "species": "serperior",
+      "problems": []
+    },
+    {
+      "species": "garganacl",
+      "problems": []
+    },
+    {
+      "species": "gengar",
+      "problems": []
+    }
+  ]
+}

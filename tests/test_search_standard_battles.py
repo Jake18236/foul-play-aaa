@@ -394,10 +394,10 @@ class TestPredictTeamLikelihood:
         assert list(likelihoods.keys()) == ["blastoise"]
         assert likelihoods["blastoise"] == pytest.approx((20 / 100 + 0 / 200) / 2)
 
-    def test_no_revealed_pokemon_raises_zerodivisionerror(self):
-        # pins current behavior: an empty revealed list divides by zero
-        with pytest.raises(ZeroDivisionError):
-            predict_team_likelihood([], self.all_pkmn_counts)
+    def test_no_revealed_pokemon_uses_usage_prior(self):
+        likelihoods = predict_team_likelihood([], self.all_pkmn_counts)
+        assert sum(likelihoods.values()) == pytest.approx(1)
+        assert likelihoods["charizard"] > likelihoods["pikachu"]
 
 
 class TestGetFilteredSets:

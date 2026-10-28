@@ -297,6 +297,13 @@ def replace_return_last_used_move(battler: Battler):
 
 
 def battle_to_poke_engine_state(battle: Battle, swap=False):
+    if battle.format_spec.almost_any_ability and not hasattr(
+        PokeEngineState, "terastallization_allowed"
+    ):
+        raise RuntimeError(
+            "AAA requires the patched engine with Tera disabled. "
+            "Run python scripts/install_poke_engine.py using the advisor's Python environment."
+        )
     # Boolean that represents if we have used a switch-out move first (i.e. fast uturn)
     # this is toggled to True if we did, and signifies to the engine that the opponent has
     # selected a move and that should be accounted for in the search
@@ -336,6 +343,11 @@ def battle_to_poke_engine_state(battle: Battle, swap=False):
         trick_room=battle.trick_room,
         trick_room_turns_remaining=battle.trick_room_turns_remaining,
         team_preview=battle.team_preview,
+        **(
+            {"terastallization_allowed": False}
+            if battle.format_spec.almost_any_ability
+            else {}
+        ),
     )
 
     return state

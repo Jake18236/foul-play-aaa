@@ -79,6 +79,7 @@ class _FoulPlayConfig:
     team_preview_search_time_ms: int | None
     team_preview_search_parallelism: int | None
     search_threads: int
+    search_selector: str = "visits"
     run_count: int
     team_name: str
     team_list: str = None
@@ -92,6 +93,11 @@ class _FoulPlayConfig:
 
     def configure(self):
         parser = argparse.ArgumentParser()
+        parser.add_argument(
+            "--search-selector",
+            choices=["visits", "matrix"],
+            default=os.environ.get("FOUL_PLAY_SEARCH_SELECTOR", "visits"),
+        )
         parser.add_argument(
             "--websocket-uri",
             required=True,
@@ -119,13 +125,13 @@ class _FoulPlayConfig:
         parser.add_argument(
             "--search-time-ms",
             type=int,
-            default=100,
+            default=500,
             help="Time to search per state in milliseconds",
         )
         parser.add_argument(
             "--search-parallelism",
             type=int,
-            default=1,
+            default=10,
             help="Number of states to search in parallel",
         )
         parser.add_argument(
@@ -199,6 +205,11 @@ class _FoulPlayConfig:
             args.team_preview_search_parallelism or self.parallelism
         )
         self.search_threads = args.search_threads
+        self.search_selector = args.search_selector
+        if self.search_selector not in {"visits", "matrix"}:
+            parser.error("Invalid FOUL_PLAY_SEARCH_SELECTOR")
+        if self.search_selector == "matrix" and self.search_threads != 1:
+            parser.error("Experimental matrix selection requires --search-threads 1")
         self.run_count = args.run_count
         self.team_name = args.team_name or self.pokemon_format
         self.team_list = args.team_list

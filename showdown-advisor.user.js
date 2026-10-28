@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Foul Play Advisor
 // @namespace    foul-play-advisor
-// @version      1.7.0
+// @version      1.10.1
 // @description  Battle recovery, search analysis, and optional move controls
 // @match        https://play.pokemonshowdown.com/*
 // @run-at       document-start
@@ -18,6 +18,7 @@
   let panel, status, result, roomLabel;
   let rationale, evaluation, evaluationBar, evaluationMarker;
   let choices, opponentMoves, opponentTeam, teamEditor;
+  let modelNote;
   let executeButton, autoToggle, editTeamButton;
   let currentAnalysis = null;
   let currentModel = null;
@@ -63,6 +64,8 @@
 
   function setStatus(text) {
     if (status) status.textContent = text;
+    if (panel) panel.dataset.state = /error|cannot|could not|timed out|invalid/i.test(text)
+      ? "error" : /recommendation|action sent/i.test(text) ? "ready" : "waiting";
   }
 
   function flush() {
@@ -546,7 +549,7 @@
     if (!entries.length) {
       const empty = document.createElement("div");
       empty.textContent = "No search data available";
-      empty.style.color = "#999";
+      empty.className = "fpa-empty";
       container.appendChild(empty);
       return;
     }
@@ -554,8 +557,7 @@
     for (const [index, entry] of entries.entries()) {
       const row = document.createElement("div");
       row.textContent = formatEntry(entry, index);
-      row.style.cssText =
-        "padding:2px 0;overflow-wrap:anywhere;color:#ddd;";
+      row.className = "fpa-ranking";
       container.appendChild(row);
     }
   }
@@ -565,7 +567,7 @@
     if (!entries.length) {
       const empty = document.createElement("div");
       empty.textContent = "No team model available yet";
-      empty.style.cssText = "font-size:11px;color:#999;padding:4px 0;";
+      empty.style.cssText = "font-size:11px;color:#a3b4ca;padding:4px 0;";
       opponentTeam.appendChild(empty);
       return;
     }
@@ -573,8 +575,8 @@
     for (const pokemon of entries) {
       const card = document.createElement("div");
       card.style.cssText =
-        "padding:7px;margin:5px 0;background:#303030;" +
-        "border:1px solid #444;border-radius:5px;";
+        "padding:7px;margin:5px 0;background:#1b2a40;" +
+        "border:1px solid #344760;border-radius:5px;";
 
       const header = document.createElement("div");
       header.style.cssText =
@@ -645,7 +647,7 @@
             : ` ${Math.round(Number(move.probability) * 100)}%`;
           moveTag.textContent = formatCandidate(moveName, room) + chance;
           moveTag.style.cssText =
-            "padding:2px 4px;background:#424242;border-radius:3px;";
+            "padding:2px 4px;background:#304560;border-radius:3px;";
           moveLine.appendChild(moveTag);
         }
         details.appendChild(moveLine);
@@ -700,7 +702,7 @@
     const key = `${latestRecommendation.room}:${latestRecommendation.rqid}`;
     if (sentActions.has(key)) return;
 
-    const delay = 4000 + (Math.random() * 2 - 1) * 1000;
+    const delay = 3000 + Math.random() * 2000;
     autoTimer = setTimeout(() => {
       autoTimer = null;
       if (
@@ -719,7 +721,7 @@
       const row = document.createElement("div");
       row.style.cssText =
         "display:grid;grid-template-columns:1fr auto;gap:4px;" +
-        "margin:6px 0;padding:6px;background:#303030;border-radius:4px;";
+        "margin:6px 0;padding:6px;background:#1b2a40;border-radius:4px;";
 
       const fields = document.createElement("div");
       fields.style.cssText =
@@ -731,9 +733,10 @@
         input.dataset.field = field;
         input.value = value || "";
         input.placeholder = placeholder;
+        input.setAttribute("aria-label", placeholder);
         input.style.cssText =
           "box-sizing:border-box;width:100%;min-width:0;padding:4px;" +
-          "background:#1c1c1c;color:#eee;border:1px solid #555;border-radius:3px;";
+          "background:#111c2e;color:#eee;border:1px solid #555;border-radius:3px;";
         input.addEventListener("input", () => {
           pokemon[field] = field === "moves"
             ? input.value.split(",").map(move => move.trim()).filter(Boolean)
@@ -841,10 +844,15 @@
   function renderAnalysis(analysis, room) {
     if (!evaluation) return;
     currentAnalysis = analysis;
+    if (modelNote) {
+      modelNote.textContent = /^battle-gen\d+almostanyability(?:blitz)?-/.test(room || "")
+        ? "AAA abilities may differ from normal species abilities. Edit known abilities to refine predictions."
+        : "Guesses are sampled estimates. Edit to influence future searches.";
+    }
 
     if (!analysis) {
       rationale.textContent = "";
-      evaluation.textContent = "Position estimate unavailable";
+      evaluation.textContent = "Search trend unavailable";
       evaluationMarker.style.left = "50%";
       evaluationBar.style.opacity = "0.35";
       renderList(choices, [], () => "");
@@ -865,17 +873,15 @@
       evaluationMarker.style.left = position + "%";
       evaluationBar.style.opacity = "1";
       const leader = score > 0.02
-        ? "You"
+        ? "improving"
         : score < -0.02
-        ? "Opponent"
-        : "Even";
-      const advantage = Math.abs(score).toFixed(2);
+        ? "declining"
+        : "roughly unchanged";
       evaluation.textContent =
-        leader === "Even"
-          ? `Position estimate: even (${score >= 0 ? "+" : ""}${score.toFixed(2)})`
-          : `Position estimate: ${leader} +${advantage}`;
+        `Search trend: ${leader} (${score >= 0 ? "+" : ""}${score.toFixed(2)})`;
+      evaluation.title = "Relative to the position at the start of this search. Positive means improvement, not that you are winning.";
     } else {
-      evaluation.textContent = "Position estimate unavailable";
+      evaluation.textContent = "Search trend unavailable";
       evaluationMarker.style.left = "50%";
       evaluationBar.style.opacity = "0.35";
     }
@@ -1045,131 +1051,128 @@
   function createPanel() {
     if (panel || !document.body) return;
 
-    panel = document.createElement("div");
-
-    panel.style.cssText = `
-      position:fixed;
-      right:16px;
-      top:100px;
-      width:310px;
-      max-height:75vh;
-      overflow-y:auto;
-      z-index:999999;
-      background:#242424;
-      color:#eee;
-      border:1px solid #555;
-      border-radius:8px;
-      padding:12px;
-      box-shadow:0 4px 15px #0006;
-      font:13px Arial,sans-serif;
+    const style = document.createElement("style");
+    style.textContent = `
+      #fpa-panel { --muted:#a3b4ca; --line:#2c3c53; color-scheme:dark;
+        position:fixed;right:18px;top:80px;width:360px;max-width:calc(100vw - 24px);
+        max-height:calc(100dvh - 100px);overflow:auto;z-index:999999;
+        background:#111c2e;color:#edf3fc;border:1px solid var(--line);border-radius:18px;
+        box-shadow:0 18px 60px #03091466;font:13px/1.55 system-ui,sans-serif; }
+      #fpa-panel * { box-sizing:border-box; }
+      #fpa-panel [hidden] { display:none !important; }
+      #fpa-panel button, #fpa-panel input { font:inherit; }
+      #fpa-panel button { background:#23344b;color:#edf3fc;border:1px solid #40546f;
+        border-radius:8px;padding:8px 12px;cursor:pointer; }
+      #fpa-panel button:hover:not(:disabled) { background:#304763; }
+      #fpa-panel button:disabled { opacity:.45;cursor:not-allowed; }
+      #fpa-panel :focus-visible { outline:2px solid #77e3c3;outline-offset:3px; }
+      #fpa-panel .fpa-header { display:flex;align-items:center;gap:10px;padding:16px 18px;
+        border-bottom:1px solid var(--line);cursor:grab;touch-action:none;user-select:none; }
+      #fpa-panel .fpa-brand { font-size:16px;font-weight:750;flex:1;letter-spacing:-.4px; }
+      #fpa-panel .fpa-logo { background:#77e3c3;color:#102b2b;border-radius:9px;
+        width:32px;height:32px;display:grid;place-items:center;font-weight:800; }
+      #fpa-panel .fpa-body { padding:16px 18px; }
+      #fpa-panel .fpa-room { color:var(--muted);font-size:11px;white-space:nowrap;
+        overflow:hidden;text-overflow:ellipsis;margin-bottom:12px; }
+      #fpa-panel .fpa-status { color:#c7d5e8;font-size:12px;margin-bottom:12px; }
+      #fpa-panel .fpa-status::before { content:'●';color:#e9bc72;margin-right:7px; }
+      #fpa-panel[data-state=ready] .fpa-status::before { color:#77e3c3; }
+      #fpa-panel[data-state=error] .fpa-status::before { color:#ff999e; }
+      #fpa-panel .fpa-hero { padding:16px;background:linear-gradient(130deg,#203e47,#1b2d42);
+        border:1px solid #3d6069;border-radius:12px; }
+      #fpa-panel .fpa-eyebrow { color:#94e8d0;font-size:10px;font-weight:750;letter-spacing:1.4px;text-transform:uppercase; }
+      #fpa-panel .fpa-result { font-size:23px;font-weight:750;line-height:1.25;letter-spacing:-.6px;margin:8px 0;overflow-wrap:anywhere; }
+      #fpa-panel .fpa-result:empty::before { content:'Waiting for your turn';color:#b9cbdc;font-size:20px; }
+      #fpa-panel .fpa-reason { color:#c2d4e0;font-size:12px;overflow-wrap:anywhere; }
+      #fpa-panel .fpa-primary { width:100%;margin-top:16px;background:#77e3c3;color:#102b2b;border:0;font-weight:750;padding:11px; }
+      #fpa-panel .fpa-primary:hover:not(:disabled) { background:#a2f0d9; }
+      #fpa-panel .fpa-auto { display:flex;align-items:center;gap:8px;margin:13px 0 2px;color:#d2deed;font-size:12px; }
+      #fpa-panel input[type=checkbox] { accent-color:#77e3c3;width:16px;height:16px; }
+      #fpa-panel .fpa-help, #fpa-panel .fpa-empty { color:var(--muted);font-size:11px; }
+      #fpa-panel .fpa-outlook { padding:16px 0; }
+      #fpa-panel .fpa-meter { height:16px;position:relative;border-radius:8px;margin:12px 3px;
+        background:linear-gradient(90deg,#dc2626 0%,#ef4444 30%,#64748b 50%,#22c55e 70%,#16a34a 100%); }
+      #fpa-panel .fpa-marker { position:absolute;top:-3px;left:50%;width:4px;height:22px;background:#fff;box-shadow:0 0 0 1px #0f172a,0 1px 4px #0008;transform:translateX(-50%);border-radius:3px; }
+      #fpa-panel .fpa-meter::before { content:"";position:absolute;left:50%;top:0;height:100%;border-left:1px dashed #ffffff80; }
+      #fpa-panel .fpa-scale { display:flex;justify-content:space-between;color:var(--muted);font-size:10px; }
+      #fpa-panel details { border-top:1px solid var(--line);padding:12px 0; }
+      #fpa-panel summary { cursor:pointer;font-weight:650;color:#e1ebf8;padding:3px 0; }
+      #fpa-panel details > .fpa-help { margin:6px 0 10px; }
+      #fpa-panel .fpa-ranking { padding:9px 10px;margin-top:6px;background:#1b2a40;border-radius:7px;color:#dce7f5;overflow-wrap:anywhere;font-size:12px; }
+      #fpa-panel .fpa-ranking:first-child { border-left:2px solid #77e3c3; }
+      #fpa-panel .fpa-footer { color:var(--muted);font-size:10px;border-top:1px solid var(--line);padding-top:12px; }
+      @media(max-width:480px) { #fpa-panel { right:12px;top:60px;max-height:calc(100dvh - 72px); } }
     `;
-
-    const heading = document.createElement("div");
-
-    heading.textContent = "FOUL PLAY ADVISOR";
-
-    heading.style.cssText =
-      "font-weight:bold;cursor:move;" +
-      "user-select:none;margin-bottom:8px;";
-
-    roomLabel = document.createElement("div");
-
-    roomLabel.style.cssText =
-      "font-size:11px;color:#aaa;" +
-      "overflow-wrap:anywhere;margin-bottom:8px;";
-
-    status = document.createElement("div");
-
-    status.style.cssText =
-      "font-size:12px;color:#bbb;margin-bottom:8px;";
-
-    result = document.createElement("div");
-
-    result.style.cssText =
-      "font-size:15px;font-weight:bold;" +
-      "overflow-wrap:anywhere;";
-
-    const actionControls = document.createElement("div");
-    actionControls.style.cssText =
-      "display:flex;align-items:center;gap:8px;margin:8px 0;";
-
-    executeButton = document.createElement("button");
+    document.head.appendChild(style);
+    const el = (tag, className, text) => {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text) node.textContent = text;
+      return node;
+    };
+    panel = el("aside");
+    panel.id = "fpa-panel";
+    panel.setAttribute("aria-label", "Foul Play battle advisor");
+    const heading = el("div", "fpa-header");
+    heading.title = "Drag to move the advisor";
+    const collapse = el("button", "", "−");
+    collapse.type = "button";
+    collapse.setAttribute("aria-label", "Minimize advisor");
+    collapse.setAttribute("aria-expanded", "true");
+    heading.append(el("span", "fpa-logo", "FP"), el("span", "fpa-brand", "Foul Play"), collapse);
+    const body = el("div", "fpa-body");
+    collapse.addEventListener("click", () => {
+      body.hidden = !body.hidden;
+      collapse.textContent = body.hidden ? "+" : "−";
+      collapse.setAttribute("aria-expanded", String(!body.hidden));
+      collapse.setAttribute("aria-label", body.hidden ? "Expand advisor" : "Minimize advisor");
+    });
+    roomLabel = el("div", "fpa-room", "Open a battle to get started");
+    status = el("div", "fpa-status", "Connecting to advisor…");
+    status.setAttribute("role", "status");
+    const hero = el("div", "fpa-hero");
+    result = el("div", "fpa-result");
+    result.setAttribute("aria-live", "polite");
+    rationale = el("div", "fpa-reason");
+    executeButton = el("button", "fpa-primary", "Play recommended action");
     executeButton.type = "button";
-    executeButton.textContent = "Use recommended action";
     executeButton.disabled = true;
     executeButton.addEventListener("click", sendChosenAction);
-
-    const autoLabel = document.createElement("label");
-    autoLabel.style.cssText =
-      "display:flex;align-items:center;gap:4px;font-size:11px;color:#ddd;";
-    autoToggle = document.createElement("input");
+    hero.append(el("div", "fpa-eyebrow", "Recommended play"), result, rationale, executeButton);
+    const autoLabel = el("label", "fpa-auto");
+    autoToggle = el("input");
     autoToggle.type = "checkbox";
     autoToggle.addEventListener("change", () => {
-      if (autoToggle.checked) {
-        scheduleAutoAction();
-      } else {
-        clearTimeout(autoTimer);
-        autoTimer = null;
-      }
+      if (autoToggle.checked) scheduleAutoAction();
+      else { clearTimeout(autoTimer); autoTimer = null; }
     });
-    autoLabel.append(autoToggle, "Auto (3-5 sec)");
-    actionControls.append(executeButton, autoLabel);
-
-    rationale = document.createElement("div");
-    rationale.style.cssText =
-      "font-size:12px;color:#ccc;margin:6px 0;overflow-wrap:anywhere;";
-
-    evaluation = document.createElement("div");
-    evaluation.style.cssText =
-      "font-size:12px;color:#ddd;margin:8px 0 5px;";
-
-    evaluationBar = document.createElement("div");
-    evaluationBar.style.cssText =
-      "height:10px;position:relative;border-radius:5px;" +
-      "background:linear-gradient(90deg,#bd4a4a 0%,#777 50%,#4ea85c 100%);" +
-      "margin-bottom:10px;";
-
-    evaluationMarker = document.createElement("div");
-    evaluationMarker.style.cssText =
-      "position:absolute;top:-3px;left:50%;height:16px;width:3px;" +
-      "background:#fff;box-shadow:0 0 3px #000;transform:translateX(-50%);";
-    evaluationBar.appendChild(evaluationMarker);
-
-    choices = document.createElement("div");
-    opponentMoves = document.createElement("div");
-    opponentTeam = document.createElement("div");
-
-    panel.append(
-      heading,
-      roomLabel,
-      status,
-      result,
-      actionControls,
-      rationale,
-      evaluation,
-      evaluationBar
-    );
-    const rankingHeading = document.createElement("div");
-    rankingHeading.textContent = "MOVE RANKINGS";
-    rankingHeading.style.cssText =
-      "font-size:12px;font-weight:bold;color:#aaa;margin:8px 0 3px;";
-    const opponentMovesHeading = document.createElement("div");
-    opponentMovesHeading.textContent = "LIKELY OPPONENT ACTIONS";
-    opponentMovesHeading.style.cssText =
-      "font-size:12px;font-weight:bold;color:#aaa;margin:8px 0 3px;";
-    const opponentTeamHeading = document.createElement("div");
-    opponentTeamHeading.textContent = "OPPONENT TEAM MODEL";
-    opponentTeamHeading.style.cssText =
-      "font-size:12px;font-weight:bold;color:#aaa;margin:8px 0 3px;";
-    const modelNote = document.createElement("div");
-    modelNote.textContent =
-      "Guesses are sampled estimates. Edit to influence future searches.";
-    modelNote.style.cssText =
-      "font-size:10px;color:#999;margin-bottom:4px;";
-    editTeamButton = document.createElement("button");
+    autoLabel.append(autoToggle, "Auto-play recommendations");
+    const autoHelp = el("div", "fpa-help", "When enabled, sends each action after 3–5 seconds.");
+    const outlook = el("div", "fpa-outlook");
+    evaluation = el("div", "", "Waiting for a search trend");
+    evaluationBar = el("div", "fpa-meter");
+    evaluationMarker = el("div", "fpa-marker");
+    evaluationBar.append(evaluationMarker);
+    const scale = el("div", "fpa-scale");
+    scale.append(el("span", "", "Declining"), el("span", "", "Unchanged"), el("span", "", "Improving"));
+    outlook.append(evaluation, evaluationBar, scale, el("div", "fpa-help", "Change from the current position, not winning odds. Green can still mean a losing position."));
+    const section = (title, help, open = false) => {
+      const details = el("details");
+      details.open = open;
+      details.append(el("summary", "", title), el("div", "fpa-help", help));
+      body.append(details);
+      return details;
+    };
+    body.append(roomLabel, status, hero, autoLabel, autoHelp, outlook);
+    choices = el("div");
+    section("Compare your options", "Search share shows how often the engine explored an action; it is not a win probability.", true).append(choices);
+    opponentMoves = el("div");
+    section("What might they do?", "Predicted actions from the current search.").append(opponentMoves);
+    opponentTeam = el("div");
+    const teamSection = section("Opponent team & assumptions", "Review estimated sets or add information you know.");
+    modelNote = el("div", "fpa-help");
+    editTeamButton = el("button", "", "Edit team model");
     editTeamButton.type = "button";
-    editTeamButton.textContent = "Edit team model";
-    editTeamButton.style.cssText = "margin:0 0 6px;";
     editTeamButton.dataset.editing = "false";
     editTeamButton.addEventListener("click", () => {
       if (editTeamButton.dataset.editing === "true") {
@@ -1194,57 +1197,29 @@
       editTeamButton.dataset.editing = "true";
       editTeamButton.textContent = "Cancel editing";
     });
-    teamEditor = document.createElement("div");
+    teamEditor = el("div");
     teamEditor.hidden = true;
-    teamEditor.style.cssText =
-      "padding:6px;background:#252525;border-radius:4px;margin-bottom:8px;";
-    panel.append(
-      rankingHeading,
-      choices,
-      opponentMovesHeading,
-      opponentMoves,
-      opponentTeamHeading,
-      modelNote,
-      opponentTeam,
-      editTeamButton,
-      teamEditor
-    );
-
+    teamSection.append(modelNote, opponentTeam, editTeamButton, teamEditor);
+    body.append(el("div", "fpa-footer", "Search scores are relative estimates, not win probabilities."));
+    panel.append(heading, body);
     document.body.appendChild(panel);
 
-    let drag = false;
-    let x = 0;
-    let y = 0;
-
-    heading.addEventListener("mousedown", e => {
-      drag = true;
-
+    let drag = null;
+    heading.addEventListener("pointerdown", event => {
+      if (event.target.closest("button") || event.button !== 0) return;
       const rect = panel.getBoundingClientRect();
-
-      x = e.clientX - rect.left;
-      y = e.clientY - rect.top;
-
-      panel.style.left = rect.left + "px";
-      panel.style.top = rect.top + "px";
-      panel.style.right = "auto";
-
-      e.preventDefault();
+      drag = {x: event.clientX - rect.left, y: event.clientY - rect.top};
+      heading.setPointerCapture(event.pointerId);
+      event.preventDefault();
     });
-
-    document.addEventListener("mousemove", e => {
+    heading.addEventListener("pointermove", event => {
       if (!drag) return;
-
-      panel.style.left =
-        (e.clientX - x) + "px";
-
-      panel.style.top =
-        (e.clientY - y) + "px";
+      panel.style.left = Math.max(0, Math.min(innerWidth - panel.offsetWidth, event.clientX - drag.x)) + "px";
+      panel.style.top = Math.max(0, Math.min(innerHeight - heading.offsetHeight, event.clientY - drag.y)) + "px";
+      panel.style.right = "auto";
     });
-
-    document.addEventListener("mouseup", () => {
-      drag = false;
-    });
-
+    heading.addEventListener("pointerup", () => { drag = null; });
+    heading.addEventListener("pointercancel", () => { drag = null; });
     poll();
   }
 

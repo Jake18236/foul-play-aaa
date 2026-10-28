@@ -41,16 +41,29 @@ def populate_pkmn_from_set(
 ):
     known_pokemon_moves = pkmn.moves
 
-    pkmn.moves = []
+    # A fallback dataset may omit a revealed move. Observations (including PP
+    # and disabled flags) must survive population and the four-move limit.
+    pkmn.moves = list(known_pokemon_moves)
     for mv in set_.pkmn_moveset.moves:
-        pkmn.add_move(mv)
-    pkmn.ability = pkmn.ability or set_.pkmn_set.ability
-    if pkmn.item == constants.UNKNOWN_ITEM:
+        if len(pkmn.moves) < 4 and pkmn.get_move(mv) is None:
+            pkmn.add_move(mv)
+    if pkmn.ability is None and set_.pkmn_set.ability not in pkmn.impossible_abilities:
+        pkmn.ability = set_.pkmn_set.ability
+    if (
+        pkmn.item == constants.UNKNOWN_ITEM
+        and set_.pkmn_set.item not in pkmn.impossible_items
+        and (
+            pkmn.can_have_choice_item
+            or set_.pkmn_set.item not in constants.CHOICE_ITEMS
+        )
+        and pkmn.removed_item is None
+    ):
         pkmn.item = set_.pkmn_set.item
-    pkmn.set_spread(
-        set_.pkmn_set.nature,
-        ",".join(str(x) for x in set_.pkmn_set.evs),
-    )
+    if not pkmn.stats_known and "transform" not in pkmn.volatile_statuses:
+        pkmn.set_spread(
+            set_.pkmn_set.nature,
+            ",".join(str(x) for x in set_.pkmn_set.evs),
+        )
     if (
         set_.pkmn_set.tera_type is not None
         and not pkmn.terastallized

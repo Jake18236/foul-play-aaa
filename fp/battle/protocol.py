@@ -374,12 +374,8 @@ def switch_or_drag(battle, split_msg, switch_or_drag="switch"):
     if is_opponent(battle, split_msg):
         new_hp_percentage = float(split_hp_msg[0]) / 100
         if (
-            pkmn.hp != new_hp_percentage * pkmn.max_hp
-            and "regenerator"
-            in [
-                normalize_name(a)
-                for a in pokedex[pkmn.name][constants.ABILITIES].values()
-            ]
+            pkmn.hp < new_hp_percentage * pkmn.max_hp
+            and pkmn.can_have_ability("regenerator")
             and pkmn.ability is None
             and battle.gen.regenerator_heals_on_switch_out
         ):
@@ -890,10 +886,7 @@ def move(battle, split_msg):
     # if this pokemon used a damaging move, eliminate the possibility of guessing a lifeorb
     # the lifeorb will reveal itself if it has it
     if category in constants.DAMAGING_CATEGORIES and not any(
-        [
-            normalize_name(a) in ["sheerforce", "magicguard"]
-            for a in pokedex[pkmn.name][constants.ABILITIES].values()
-        ]
+        pkmn.can_have_ability(a) for a in ("sheerforce", "magicguard")
     ):
         logger.info(
             "{} used a damaging move - not guessing lifeorb anymore".format(pkmn.name)
@@ -913,7 +906,9 @@ def move(battle, split_msg):
         side.baton_passing = True
 
     # |move|p1a: Slaking|Earthquake|p2a: Heatran
-    if pkmn.ability == "truant" or pkmn.name == "slaking":
+    if pkmn.ability == "truant" or (
+        pkmn.name == "slaking" and not pkmn.format_spec.almost_any_ability
+    ):
         if "truant" not in pkmn.volatile_statuses:
             logger.info("Adding 'truant' to {}'s volatiles".format(pkmn.name))
             pkmn.volatile_statuses.append("truant")
@@ -1585,10 +1580,11 @@ def remove_item(battle, split_msg):
         logger.info("Setting {}'s removed item to {}".format(side.active.name, item))
         side.active.removed_item = item
 
-    if "unburden" not in side.active.volatile_statuses and "unburden" in [
-        normalize_name(a)
-        for a in pokedex[side.active.name][constants.ABILITIES].values()
-    ]:
+    if "unburden" not in side.active.volatile_statuses and (
+        side.active.ability == "unburden"
+        if side.active.format_spec.almost_any_ability
+        else side.active.can_have_ability("unburden")
+    ):
         logger.info("Adding unburden volatile to {}".format(side.active.name))
         side.active.volatile_statuses.append("unburden")
 

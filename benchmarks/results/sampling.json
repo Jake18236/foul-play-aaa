@@ -1,0 +1,71 @@
+[
+  {
+    "source": "baseline",
+    "case": "known_stats",
+    "violations": [
+      "known stats/HP overwritten"
+    ]
+  },
+  {
+    "source": "baseline",
+    "case": "impossible_traits",
+    "violations": [
+      "impossible ability restored",
+      "impossible item restored"
+    ]
+  },
+  {
+    "source": "baseline",
+    "case": "missing_usage",
+    "error": "AttributeError: 'list' object has no attribute 'get'"
+  },
+  {
+    "source": "baseline",
+    "case": "zero_rates",
+    "error": "timeout"
+  },
+  {
+    "source": "baseline",
+    "case": "four_move_cap",
+    "violations": [
+      "moves exceed four"
+    ]
+  },
+  {
+    "source": "baseline",
+    "case": "revealed_traits",
+    "violations": [
+      "fallback contradicts revealed traits"
+    ]
+  },
+  {
+    "source": "current",
+    "case": "known_stats",
+    "violations": []
+  },
+  {
+    "source": "current",
+    "case": "impossible_traits",
+    "violations": []
+  },
+  {
+    "source": "current",
+    "case": "missing_usage",
+    "violations": []
+  },
+  {
+    "source": "current",
+    "case": "zero_rates",
+    "violations": []
+  },
+  {
+    "source": "current",
+    "case": "four_move_cap",
+    "violations": []
+  },
+  {
+    "source": "current",
+    "case": "revealed_traits",
+    "violations": []
+  }
+]

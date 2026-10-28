@@ -275,3 +275,31 @@ class TestFindBestMoveSmoke:
             "switch heatran",
         }
         assert choice.removesuffix("-tera") in legal_options
+
+
+@pytest.mark.parametrize("format_name", ["gen9almostanyability", "gen9almostanyabilityblitz", "gen9randombattle"])
+def test_format_tera_gate_survives_roundtrip_and_switches(format_name):
+    from poke_engine import generate_instructions, monte_carlo_tree_search
+
+    battle = small_battle()
+    battle.pokemon_format = format_name
+    for battler in (battle.user, battle.opponent):
+        for pokemon in [battler.active, *battler.reserve]:
+            pokemon.tera_type = "water"
+            pokemon.can_terastallize = True
+    expected = not battle.format_spec.almost_any_ability
+    state = battle_to_poke_engine_state(battle)
+    state = PokeEngineState.from_string(state.to_string())
+    assert state.terastallization_allowed is expected
+    for side in (state.side_one, state.side_two):
+        assert not any(p.terastallized for p in side.pokemon)
+    # Search each lead, including former reserves, on both sides. The native
+    # option generator must omit Tera, not merely filter the final selection.
+    for switched in (False, True):
+        if switched:
+            instructions = generate_instructions(state, "garchomp", "tyranitar")
+            state = state.apply_instructions(instructions[0])
+            assert state.terastallization_allowed is expected
+        result = monte_carlo_tree_search(state, iterations=100)
+        for options in (result.side_one, result.side_two):
+            assert any(str(option.move_choice).endswith("-tera") for option in options) is expected
